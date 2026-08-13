@@ -2,58 +2,116 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ episode.title }} — Translation Review</title>
 <style>
-  body { font-family: -apple-system, Segoe UI, Arial, sans-serif; margin: 0; padding: 2rem;
-         background: #f5f5f5; color: #222; }
-  h1 { margin-bottom: 0.2rem; }
-  .meta { color: #666; margin-bottom: 1.5rem; }
-  .actions { margin-bottom: 1.5rem; }
-  .actions a, .actions .btn { margin-right: 0.5rem; background: #333; color: #fff; padding: 0.5rem 1rem;
-    border-radius: 6px; text-decoration: none; display: inline-block; border: none; cursor: pointer; font-size: 0.95rem; }
-  .warning { background: #ffe0e0; border: 1px solid #d33; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
-  .chapter { margin-bottom: 2.5rem; }
-  .chapter h2 { border-bottom: 2px solid #333; padding-bottom: 0.3rem; }
-  table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  th, td { border: 1px solid #ddd; padding: 0.6rem 0.8rem; text-align: left; vertical-align: top; }
-  th { background: #333; color: #fff; }
-  .flag-note { background: #fff3cd; }
-  .flag-narrator { background: #dbe9ff; }
-  .comment textarea { width: 100%; min-height: 3.5rem; font-family: inherit; }
-  .legend { display: flex; gap: 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
-  .swatch { display: inline-block; width: 12px; height: 12px; margin-right: 4px; border: 1px solid #999; }
-  audio { width: 220px; height: 32px; }
-  select.flag-select { font-size: 0.85rem; }
+  :root {
+    --bg: #f4f5f7; --surface: #fff; --border: #e3e5e9; --text: #1c1f26; --text-muted: #6b7280;
+    --primary: #4f46e5; --primary-dark: #4338ca; --primary-soft: #eef2ff;
+    --note-bg: #fffbeb; --note-border: #fcd34d;
+    --narrator-bg: #eff4ff; --narrator-border: #bfdbfe;
+    --radius: 10px; --shadow: 0 1px 2px rgba(16,24,40,0.06), 0 1px 3px rgba(16,24,40,0.06);
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Inter, Arial, sans-serif; margin: 0;
+    background: var(--bg); color: var(--text); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  .page { max-width: 1180px; margin: 0 auto; padding: 2rem 2rem 4rem; }
+  a { color: var(--primary); }
+  h1 { margin: 0 0 0.2rem; font-size: 1.6rem; font-weight: 700; letter-spacing: -0.01em; }
+  .meta { color: var(--text-muted); margin: 0 0 1.25rem; font-size: 0.92rem; }
+
+  .topbar { position: sticky; top: 0; z-index: 20; background: rgba(244,245,247,0.92);
+    backdrop-filter: blur(6px); margin: 0 -2rem 1.25rem; padding: 1.25rem 2rem 1rem; border-bottom: 1px solid var(--border); }
+  .back-link { display: inline-flex; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.6rem; font-weight: 500; text-decoration: none; }
+  .back-link:hover { color: var(--primary); }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.9rem; }
+  .btn { display: inline-flex; align-items: center; gap: 0.4rem; background: var(--primary); color: #fff;
+    padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; border: none; cursor: pointer;
+    font-size: 0.85rem; font-weight: 600; transition: background 0.12s ease; box-shadow: 0 1px 2px rgba(79,70,229,0.25); }
+  .btn:hover { background: var(--primary-dark); }
+  .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
+  .btn-secondary:hover { background: #f9fafb; }
+
+  .warning { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; padding: 0.85rem 1.1rem;
+    border-radius: var(--radius); margin-bottom: 1.25rem; font-size: 0.9rem; }
+  .warning ul { margin: 0.4rem 0 0 1.1rem; padding: 0; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 1.1rem; margin-bottom: 1.5rem; font-size: 0.85rem; color: var(--text-muted); }
+  .legend span.item { display: flex; align-items: center; gap: 0.4rem; }
+  .swatch { display: inline-block; width: 13px; height: 13px; border-radius: 4px; border: 1px solid var(--border); }
+
+  .chapter { margin-bottom: 2rem; }
+  .chapter-head { position: sticky; top: 92px; z-index: 10; background: var(--bg); padding: 0.6rem 0; }
+  .chapter-head h2 { margin: 0; font-size: 1.05rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.5rem; }
+  .chapter-head .count { font-weight: 500; color: var(--text-muted); font-size: 0.82rem; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 0.7rem 0.9rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+  th { background: #fafafa; color: var(--text-muted); font-size: 0.72rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.sr { color: var(--text-muted); font-variant-numeric: tabular-nums; width: 2.2rem; }
+  td.speaker { font-weight: 600; white-space: nowrap; }
+  td.text-cell { max-width: 260px; }
+
+  tr.flag-note td { background: var(--note-bg); }
+  tr.flag-note td.speaker { box-shadow: inset 3px 0 0 var(--note-border); }
+  tr.flag-narrator td { background: var(--narrator-bg); }
+  tr.flag-narrator td.speaker { box-shadow: inset 3px 0 0 var(--narrator-border); }
+
+  .comment-view { white-space: pre-wrap; }
+  .row-edit-form { display: flex; flex-direction: column; gap: 0.4rem; min-width: 200px; }
+  .row-edit-form textarea { width: 100%; min-height: 3.2rem; font-family: inherit; font-size: 0.85rem;
+    padding: 0.4rem 0.55rem; border: 1px solid var(--border); border-radius: 6px; resize: vertical; background: #fff; }
+  .row-edit-form textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+  .row-edit-controls { display: flex; align-items: center; gap: 0.5rem; }
+  select.flag-select { font-size: 0.78rem; padding: 0.25rem 0.4rem; border-radius: 6px; border: 1px solid var(--border); background: #fff; }
+  .btn-save { padding: 0.3rem 0.75rem; font-size: 0.78rem; }
+  .btn-save.saved { background: #16a34a; }
+
+  audio { width: 210px; height: 34px; }
+  .no-audio { color: var(--text-muted); font-size: 0.82rem; font-style: italic; }
 </style>
 </head>
 <body>
-  <h1>{{ episode.title }}</h1>
-  <p class="meta">Target language: {{ episode.target_lang_name }}</p>
+<div class="page">
 
   {% if not standalone %}
-  <div class="actions">
-    <a href="{{ url_for('lang_dashboard', lang_code=episode.target_lang) }}">&larr; All episodes</a>
-    <a href="{{ url_for('export_html', episode_id=episode._id) }}">Export as standalone HTML</a>
-    <a href="{{ url_for('export_xlsx', episode_id=episode._id) }}">Export as Excel</a>
+  <div class="topbar">
+    <a class="back-link" href="{{ url_for('lang_dashboard', lang_code=episode.target_lang) }}">&larr; {{ episode.target_lang_name }} episodes</a>
+    <h1>{{ episode.title }}</h1>
+    <p class="meta" style="margin-bottom:0;">Target language: {{ episode.target_lang_name }}</p>
+    <div class="actions">
+      <a class="btn" href="{{ url_for('export_html', episode_id=episode._id) }}">Export standalone HTML</a>
+      <a class="btn btn-secondary" href="{{ url_for('export_xlsx', episode_id=episode._id) }}">Export Excel</a>
+    </div>
   </div>
+  {% else %}
+  <h1>{{ episode.title }}</h1>
+  <p class="meta">Target language: {{ episode.target_lang_name }}</p>
   {% endif %}
 
   {% if episode.alignment_warnings %}
   <div class="warning">
-    <strong>Alignment warnings:</strong>
+    <strong>Alignment warnings</strong>
     <ul>{% for w in episode.alignment_warnings %}<li>{{ w }}</li>{% endfor %}</ul>
   </div>
   {% endif %}
 
   <div class="legend">
-    <span><span class="swatch" style="background:#fff"></span>Straightforward</span>
-    <span><span class="swatch" style="background:#fff3cd"></span>Flagged (note)</span>
-    <span><span class="swatch" style="background:#dbe9ff"></span>Narrator line</span>
+    <span class="item"><span class="swatch" style="background:#fff"></span>Straightforward</span>
+    <span class="item"><span class="swatch" style="background:var(--note-bg);border-color:var(--note-border)"></span>Flagged (note)</span>
+    <span class="item"><span class="swatch" style="background:var(--narrator-bg);border-color:var(--narrator-border)"></span>Narrator line</span>
   </div>
 
   {% for chapter in episode.chapters %}
   <section class="chapter">
-    <h2>Chapter {{ chapter.chapter_number }}: {{ chapter.title }}</h2>
+    <div class="chapter-head">
+      <h2>Chapter {{ chapter.chapter_number }}: {{ chapter.title }} <span class="count">({{ chapter.rows | length }} lines)</span></h2>
+    </div>
+    <div class="panel">
     <table>
       <thead>
         <tr>
@@ -64,21 +122,23 @@
       <tbody>
         {% for row in chapter.rows %}
         <tr class="{{ row | row_class }}">
-          <td>{{ row.sr_no }}</td>
-          <td>{{ row.speaker }}</td>
-          <td>{{ row.english }}</td>
-          <td>{{ row.translated }}</td>
+          <td class="sr">{{ row.sr_no }}</td>
+          <td class="speaker">{{ row.speaker }}</td>
+          <td class="text-cell">{{ row.english }}</td>
+          <td class="text-cell">{{ row.translated }}</td>
           <td class="comment">
             {% if standalone %}
-              {{ row.review_comment or "" }}
+              <div class="comment-view">{{ row.review_comment or "" }}</div>
             {% else %}
               <form class="row-edit-form" data-episode="{{ episode._id }}" data-sr-no="{{ row.sr_no }}">
                 <textarea name="review_comment">{{ row.review_comment or "" }}</textarea>
-                <select name="review_flag" class="flag-select">
-                  <option value="ok" {% if row.review_flag == "ok" %}selected{% endif %}>ok</option>
-                  <option value="note" {% if row.review_flag == "note" %}selected{% endif %}>note</option>
-                </select>
-                <button type="submit" class="btn" style="padding:0.2rem 0.6rem;font-size:0.8rem">Save</button>
+                <div class="row-edit-controls">
+                  <select name="review_flag" class="flag-select">
+                    <option value="ok" {% if row.review_flag == "ok" %}selected{% endif %}>ok</option>
+                    <option value="note" {% if row.review_flag == "note" %}selected{% endif %}>note</option>
+                  </select>
+                  <button type="submit" class="btn btn-save">Save</button>
+                </div>
               </form>
             {% endif %}
           </td>
@@ -90,13 +150,14 @@
                 <audio controls src="{{ url_for('episode_audio', episode_id=episode._id, filename=row.audio_path) }}"></audio>
               {% endif %}
             {% else %}
-              <em>no audio</em>
+              <span class="no-audio">no audio</span>
             {% endif %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </section>
   {% endfor %}
 
@@ -107,21 +168,23 @@
         e.preventDefault();
         const episodeId = form.dataset.episode;
         const srNo = form.dataset.srNo;
+        const btn = form.querySelector("button");
+        const orig = btn.textContent;
         fetch(`/episode/${episodeId}/row/${srNo}`, {
           method: "POST",
           headers: { "X-Requested-With": "XMLHttpRequest" },
           body: new FormData(form),
         }).then(r => r.json()).then(data => {
           if (data.ok) {
-            const btn = form.querySelector("button");
-            const orig = btn.textContent;
             btn.textContent = "Saved";
-            setTimeout(() => btn.textContent = orig, 1200);
+            btn.classList.add("saved");
+            setTimeout(() => { btn.textContent = orig; btn.classList.remove("saved"); }, 1200);
           }
         });
       });
     });
   </script>
   {% endif %}
+</div>
 </body>
 </html>

@@ -1,17 +1,21 @@
 {% extends "base.html" %}
 {% block title %}{{ lang.name }} — Episodes{% endblock %}
 {% block body %}
-<p class="meta"><a href="{{ url_for('landing') }}">&larr; All languages</a></p>
+<a class="back-link" href="{{ url_for('landing') }}">&larr; All languages</a>
 <h1>{{ lang.name }} Episodes</h1>
-<p><a class="btn" href="{{ url_for('new_episode', lang_code=lang.code) }}">+ Create New</a></p>
+<p class="meta">{{ episodes | length }} episode{{ "s" if episodes | length != 1 else "" }} in this language.</p>
+<div class="actions-row">
+  <a class="btn" href="{{ url_for('new_episode', lang_code=lang.code) }}">+ New Episode</a>
+</div>
 
 {% if episodes %}
+<div class="panel">
 <table>
   <thead><tr><th>Title</th><th>Status</th><th>Chapters</th><th>Rows</th><th>Created</th><th></th></tr></thead>
   <tbody>
   {% for ep in episodes %}
     <tr>
-      <td>{{ ep.title }}</td>
+      <td><strong>{{ ep.title }}</strong></td>
       <td>
         {% if ep.status == "done" %}<span class="badge badge-ok">done</span>
         {% elif ep.status == "failed" %}<span class="badge badge-fail">failed</span>
@@ -21,13 +25,17 @@
       <td>{{ ep.row_count }}</td>
       <td>{{ ep.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
       <td><a href="{{ url_for('episode_view', episode_id=ep._id) }}">
-        {% if ep.status == "done" %}View results{% else %}View progress{% endif %}
+        {% if ep.status == "done" %}View results &rarr;{% else %}View progress &rarr;{% endif %}
       </a></td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}
-<p class="meta">No episodes for {{ lang.name }} yet.</p>
+<div class="empty-state">
+  <p>No episodes for {{ lang.name }} yet.</p>
+  <a class="btn" href="{{ url_for('new_episode', lang_code=lang.code) }}">Upload the first one</a>
+</div>
 {% endif %}
 {% endblock %}

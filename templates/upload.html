@@ -1,29 +1,34 @@
 {% extends "base.html" %}
 {% block title %}New {{ lang.name }} Episode{% endblock %}
 {% block body %}
-<p class="meta"><a href="{{ url_for('lang_dashboard', lang_code=lang.code) }}">&larr; {{ lang.name }} episodes</a></p>
+<a class="back-link" href="{{ url_for('lang_dashboard', lang_code=lang.code) }}">&larr; {{ lang.name }} episodes</a>
 <h1>New {{ lang.name }} Episode</h1>
+<p class="meta">Upload the English master script and the {{ lang.name }} translation as .docx files.</p>
 
 {% if not tts_available %}
-<p class="meta">No TTS voice pack is configured for {{ lang.name }} yet — this episode will get a
-full text review, but no narration audio.</p>
+<div class="alert alert-info">
+  No TTS voice pack is configured for {{ lang.name }} yet — this episode will get a full text
+  review, but no narration audio.
+</div>
 {% endif %}
 
-{% if error %}<p style="color:#c00">{{ error }}</p>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
 
-<form method="post" enctype="multipart/form-data" style="max-width:480px">
+<div class="panel" style="padding:1.75rem; max-width:520px;">
+<form class="stack" method="post" enctype="multipart/form-data">
   <p>
-    <label for="title">Episode title</label><br>
-    <input type="text" id="title" name="title" style="width:100%">
+    <label for="title">Episode title</label>
+    <input type="text" id="title" name="title" placeholder="e.g. Episode 12 — The Lost Kite">
   </p>
   <p>
-    <label for="english_docx">English master script (.docx)</label><br>
+    <label for="english_docx">English master script (.docx)</label>
     <input type="file" id="english_docx" name="english_docx" accept=".docx" required>
   </p>
   <p>
-    <label for="translated_docx">{{ lang.name }} translated script (.docx)</label><br>
+    <label for="translated_docx">{{ lang.name }} translated script (.docx)</label>
     <input type="file" id="translated_docx" name="translated_docx" accept=".docx" required>
   </p>
   <button class="btn" type="submit">Upload and start review</button>
 </form>
+</div>
 {% endblock %}
