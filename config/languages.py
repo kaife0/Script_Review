@@ -8,9 +8,9 @@ this language; empty list = review-only, no audio.
 
 SUPPORTED_LANGUAGES = [
     {"code": "it", "name": "Italian", "voice_key": "italian", "voice_backends": ["sherpa_onnx"]},
-    {"code": "de", "name": "German", "voice_key": "german", "voice_backends": []},
-    {"code": "es", "name": "Spanish", "voice_key": "spanish", "voice_backends": []},
-    {"code": "fr", "name": "French", "voice_key": "french", "voice_backends": []},
+    {"code": "de", "name": "German", "voice_key": "german", "voice_backends": ["sherpa_onnx"]},
+    {"code": "es", "name": "Spanish", "voice_key": "spanish", "voice_backends": ["sherpa_onnx"]},
+    {"code": "fr", "name": "French", "voice_key": "french", "voice_backends": ["sherpa_onnx"]},
 ]
 
 _BY_CODE = {lang["code"]: lang for lang in SUPPORTED_LANGUAGES}

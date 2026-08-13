@@ -8,5 +8,33 @@
       {"id": "dii-high", "gender": "male", "pitch_semitones": -2, "tempo": 0.95}
     ],
     "narrator_voice_id": "paola-medium"
+  },
+  "german": {
+    "release_prefix": "vits-piper-de_DE-",
+    "voices": [
+      {"id": "eva_k-x_low", "gender": "female", "pitch_semitones": 0, "tempo": 1.0},
+      {"id": "thorsten-medium", "gender": "male", "pitch_semitones": 0, "tempo": 1.0},
+      {"id": "thorsten-high", "gender": "male", "pitch_semitones": 2, "tempo": 1.05},
+      {"id": "thorsten_emotional-medium", "gender": "male", "pitch_semitones": -2, "tempo": 0.95}
+    ],
+    "narrator_voice_id": "eva_k-x_low"
+  },
+  "spanish": {
+    "release_prefix": "vits-piper-es_ES-",
+    "voices": [
+      {"id": "sharvard-medium", "gender": "male", "pitch_semitones": 0, "tempo": 1.0},
+      {"id": "davefx-medium", "gender": "male", "pitch_semitones": 2, "tempo": 1.05},
+      {"id": "carlfm-x_low", "gender": "male", "pitch_semitones": -2, "tempo": 0.95}
+    ],
+    "narrator_voice_id": "sharvard-medium"
+  },
+  "french": {
+    "release_prefix": "vits-piper-fr_FR-",
+    "voices": [
+      {"id": "siwis-medium", "gender": "female", "pitch_semitones": 0, "tempo": 1.0},
+      {"id": "tom-medium", "gender": "male", "pitch_semitones": 0, "tempo": 1.0},
+      {"id": "gilles-low", "gender": "male", "pitch_semitones": 2, "tempo": 1.05}
+    ],
+    "narrator_voice_id": "siwis-medium"
   }
 }

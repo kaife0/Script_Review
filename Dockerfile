@@ -13,10 +13,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Bake the Italian voice pack into the image so Cloud Run instances don't need
-# to download it on cold start. Add more `download_voices.sh <language>` lines
-# as more languages get sherpa_onnx voice pools in config/voice_casting.json.
-RUN chmod +x scripts/download_voices.sh && scripts/download_voices.sh italian
+# Bake voice packs into the image so Cloud Run instances don't need to
+# download them on cold start. Add a line here for each language added to
+# config/voice_casting.json.
+RUN chmod +x scripts/download_voices.sh \
+    && scripts/download_voices.sh italian \
+    && scripts/download_voices.sh german \
+    && scripts/download_voices.sh spanish \
+    && scripts/download_voices.sh french
 
 ENV PORT=8080
 EXPOSE 8080
