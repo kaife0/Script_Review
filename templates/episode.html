@@ -36,6 +36,24 @@
     border-radius: var(--radius); margin-bottom: 1.25rem; font-size: 0.9rem; }
   .warning ul { margin: 0.4rem 0 0 1.1rem; padding: 0; }
 
+  .verify-progress { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
+  .verify-progress-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 0.6rem; }
+  .verify-progress-head .label { font-weight: 600; font-size: 0.9rem; }
+  .verify-progress-head .pct { font-weight: 700; font-size: 1.1rem; color: var(--primary); }
+  .verify-track { background: #eef0f3; border-radius: 999px; height: 10px; overflow: hidden; }
+  .verify-fill { background: linear-gradient(90deg, #22c55e, #16a34a); height: 100%; border-radius: 999px;
+    transition: width 0.35s ease; width: 0%; }
+  .verify-count { color: var(--text-muted); font-size: 0.8rem; margin-top: 0.4rem; }
+
+  td.verify { text-align: center; white-space: nowrap; }
+  .verify-toggle { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.7rem;
+    border-radius: 999px; border: 1px solid var(--border); background: #fff; cursor: pointer;
+    font-size: 0.78rem; font-weight: 600; color: var(--text-muted); transition: all 0.12s ease; }
+  .verify-toggle:hover { border-color: #16a34a; color: #16a34a; }
+  .verify-toggle.done { background: #dcfce7; border-color: #16a34a; color: #15803d; }
+  tr.row-verified { opacity: 0.72; }
+
   .legend { display: flex; flex-wrap: wrap; gap: 1.1rem; margin-bottom: 1.5rem; font-size: 0.85rem; color: var(--text-muted); }
   .legend span.item { display: flex; align-items: center; gap: 0.4rem; }
   .swatch { display: inline-block; width: 13px; height: 13px; border-radius: 4px; border: 1px solid var(--border); }
@@ -100,6 +118,17 @@
   </div>
   {% endif %}
 
+  {% if not standalone %}
+  <div class="verify-progress">
+    <div class="verify-progress-head">
+      <span class="label">Review progress</span>
+      <span class="pct" id="verify-pct">0%</span>
+    </div>
+    <div class="verify-track"><div class="verify-fill" id="verify-fill"></div></div>
+    <div class="verify-count" id="verify-count">0 / 0 lines marked done</div>
+  </div>
+  {% endif %}
+
   <div class="legend">
     <span class="item"><span class="swatch" style="background:#fff"></span>Straightforward</span>
     <span class="item"><span class="swatch" style="background:var(--note-bg);border-color:var(--note-border)"></span>Flagged (note)</span>
@@ -116,12 +145,12 @@
       <thead>
         <tr>
           <th>#</th><th>Speaker</th><th>English</th><th>{{ episode.target_lang_name }}</th>
-          <th>Reviewer Comment</th><th>Audio</th>
+          <th>Reviewer Comment</th><th>Audio</th>{% if not standalone %}<th>Verified</th>{% endif %}
         </tr>
       </thead>
       <tbody>
         {% for row in chapter.rows %}
-        <tr class="{{ row | row_class }}">
+        <tr class="{{ row | row_class }}{% if row.human_verified %} row-verified{% endif %}" data-row="{{ row.sr_no }}">
           <td class="sr">{{ row.sr_no }}</td>
           <td class="speaker">{{ row.speaker }}</td>
           <td class="text-cell">{{ row.english }}</td>
@@ -153,6 +182,15 @@
               <span class="no-audio">no audio</span>
             {% endif %}
           </td>
+          {% if not standalone %}
+          <td class="verify">
+            <button type="button" class="verify-toggle{% if row.human_verified %} done{% endif %}"
+                    data-episode="{{ episode._id }}" data-sr-no="{{ row.sr_no }}"
+                    data-verified="{{ 'true' if row.human_verified else 'false' }}">
+              {% if row.human_verified %}&#10003; Done{% else %}Mark done{% endif %}
+            </button>
+          </td>
+          {% endif %}
         </tr>
         {% endfor %}
       </tbody>
@@ -163,6 +201,13 @@
 
   {% if not standalone %}
   <script>
+    function updateVerifyBar(verified, total) {
+      const pct = total ? Math.round((verified / total) * 100) : 0;
+      document.getElementById("verify-pct").textContent = pct + "%";
+      document.getElementById("verify-fill").style.width = pct + "%";
+      document.getElementById("verify-count").textContent = `${verified} / ${total} lines marked done`;
+    }
+
     document.querySelectorAll(".row-edit-form").forEach(form => {
       form.addEventListener("submit", e => {
         e.preventDefault();
@@ -183,6 +228,30 @@
         });
       });
     });
+
+    document.querySelectorAll(".verify-toggle").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const episodeId = btn.dataset.episode;
+        const srNo = btn.dataset.srNo;
+        const nextVerified = btn.dataset.verified !== "true";
+        const body = new FormData();
+        body.set("human_verified", nextVerified ? "true" : "false");
+        fetch(`/episode/${episodeId}/row/${srNo}`, {
+          method: "POST",
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+          body,
+        }).then(r => r.json()).then(data => {
+          if (!data.ok) return;
+          btn.dataset.verified = nextVerified ? "true" : "false";
+          btn.classList.toggle("done", nextVerified);
+          btn.innerHTML = nextVerified ? "&#10003; Done" : "Mark done";
+          btn.closest("tr").classList.toggle("row-verified", nextVerified);
+          updateVerifyBar(data.verified_rows, data.total_rows);
+        });
+      });
+    });
+
+    updateVerifyBar({{ verified_rows | tojson }}, {{ total_rows | tojson }});
   </script>
   {% endif %}
 </div>

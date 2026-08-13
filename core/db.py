@@ -93,3 +93,10 @@ def chapter_rows_reviewed(chapter: dict) -> bool:
 
 def row_audio_done(row: dict) -> bool:
     return row.get("audio_status") == "done"
+
+
+def verification_counts(episode: dict) -> tuple[int, int]:
+    """Return (verified_rows, total_rows) across all chapters."""
+    rows = [row for chapter in episode["chapters"] for row in chapter["rows"]]
+    verified = sum(1 for row in rows if row.get("human_verified"))
+    return verified, len(rows)

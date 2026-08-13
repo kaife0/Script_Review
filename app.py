@@ -96,7 +96,9 @@ def episode_view(episode_id):
         abort(404)
     if episode["status"] != "done":
         return render_template("progress.html", episode=episode)
-    return render_template("episode.html", episode=episode, standalone=False)
+    verified, total = db.verification_counts(episode)
+    return render_template("episode.html", episode=episode, standalone=False,
+                            verified_rows=verified, total_rows=total)
 
 
 @app.route("/episode/<episode_id>/status")
@@ -108,11 +110,13 @@ def episode_status(episode_id):
     audio_done = sum(
         1 for c in episode["chapters"] for r in c["rows"] if r["audio_status"] == "done"
     )
+    verified, _ = db.verification_counts(episode)
     return jsonify({
         "status": episode["status"],
         "error_message": episode.get("error_message"),
         "total_rows": total_rows,
         "audio_done": audio_done,
+        "verified_rows": verified,
     })
 
 
@@ -149,10 +153,14 @@ def update_row(episode_id, sr_no):
         if flag not in ("ok", "note"):
             abort(400, "review_flag must be 'ok' or 'note'")
         fields["review_flag"] = flag
+    if "human_verified" in request.form:
+        fields["human_verified"] = request.form["human_verified"] == "true"
     if fields:
         db.update_row(episode_id, sr_no, **fields)
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        return jsonify({"ok": True})
+        updated = db.get_episode(episode_id)
+        verified, total = db.verification_counts(updated)
+        return jsonify({"ok": True, "verified_rows": verified, "total_rows": total})
     return redirect(url_for("episode_view", episode_id=episode_id))
 
 

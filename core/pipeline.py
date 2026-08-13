@@ -39,6 +39,7 @@ def _rows_to_chapters(parsed: dict) -> list[dict]:
             "review_flag": None,
             "audio_path": None,
             "audio_status": "pending",
+            "human_verified": False,
         })
     return [chapters[num] for num in sorted(chapters)]
 
