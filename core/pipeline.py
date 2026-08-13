@@ -2,23 +2,16 @@
 so a retry on the same episode_id skips whatever stage/row already completed.
 """
 import os
+import tempfile
 
 from anthropic import Anthropic
 
-from core import db
+from core import db, storage
 from core.llm_review import review_chapter
 from core.parsing import parse_pair
 from core.tts import get_backend
 from core.voice_registry import VoicePackMissingError, cast_voices
-from config.languages import has_tts_backend
-
-AUDIO_ROOT = os.environ.get("AUDIO_ROOT", os.path.join(os.path.dirname(__file__), "..", "jobs"))
-
-
-def _episode_audio_dir(episode_id: str) -> str:
-    path = os.path.join(AUDIO_ROOT, episode_id, "audio")
-    os.makedirs(path, exist_ok=True)
-    return path
+from config.languages import has_tts_backend, voice_key
 
 
 def _rows_to_chapters(parsed: dict) -> list[dict]:
@@ -44,9 +37,17 @@ def _rows_to_chapters(parsed: dict) -> list[dict]:
     return [chapters[num] for num in sorted(chapters)]
 
 
-def _run_parse_stage(episode_id: str, episode: dict, english_path: str, translated_path: str) -> dict:
+def _run_parse_stage(episode_id: str, episode: dict) -> dict:
     db.set_episode_status(episode_id, "parsing")
-    parsed = parse_pair(english_path, translated_path)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        english_path = os.path.join(tmp_dir, "english.docx")
+        translated_path = os.path.join(tmp_dir, "translated.docx")
+        with open(english_path, "wb") as f:
+            f.write(storage.read_bytes(episode_id, "uploads/english.docx"))
+        with open(translated_path, "wb") as f:
+            f.write(storage.read_bytes(episode_id, "uploads/translated.docx"))
+        parsed = parse_pair(english_path, translated_path)
+
     chapters = _rows_to_chapters(parsed)
     db.set_episode_chapters(episode_id, chapters)
     if parsed["warnings"]:
@@ -75,12 +76,12 @@ def _run_tts_stage(episode_id: str, episode: dict) -> dict:
 
     db.set_episode_status(episode_id, "tts")
     backend = get_backend()
-    audio_dir = _episode_audio_dir(episode_id)
+    voice_lang = voice_key(target_lang)
 
     speakers = list(dict.fromkeys(
         row["speaker"] for chapter in episode["chapters"] for row in chapter["rows"]
     ))
-    casting = cast_voices(target_lang, speakers)
+    casting = cast_voices(voice_lang, speakers)
 
     for chapter in episode["chapters"]:
         for row in chapter["rows"]:
@@ -92,10 +93,9 @@ def _run_tts_stage(episode_id: str, episode: dict) -> dict:
                 continue
             try:
                 voice = casting[row["speaker"]]
-                audio_bytes = backend.synthesize(text, voice, target_lang)
+                audio_bytes = backend.synthesize(text, voice, voice_lang)
                 filename = f"row_{row['sr_no']}.mp3"
-                with open(os.path.join(audio_dir, filename), "wb") as f:
-                    f.write(audio_bytes)
+                storage.save_bytes(episode_id, f"audio/{filename}", audio_bytes)
                 db.update_row(episode_id, row["sr_no"], audio_status="done", audio_path=filename)
             except Exception as exc:
                 db.update_row(episode_id, row["sr_no"], audio_status="failed")
@@ -104,15 +104,17 @@ def _run_tts_stage(episode_id: str, episode: dict) -> dict:
     return db.get_episode(episode_id)
 
 
-def run_pipeline(episode_id: str, english_path: str, translated_path: str) -> None:
-    """Run parse -> review -> TTS for an episode. Idempotent: skips stages/rows already done."""
+def run_pipeline(episode_id: str) -> None:
+    """Run parse -> review -> TTS for an episode. Idempotent: skips stages/rows already done.
+    Expects english.docx/translated.docx already saved under uploads/ for this episode.
+    """
     try:
         episode = db.get_episode(episode_id)
         if episode is None:
             raise RuntimeError(f"Episode {episode_id} not found")
 
         if not episode["chapters"]:
-            episode = _run_parse_stage(episode_id, episode, english_path, translated_path)
+            episode = _run_parse_stage(episode_id, episode)
 
         episode = _run_review_stage(episode_id, episode)
         episode = _run_tts_stage(episode_id, episode)

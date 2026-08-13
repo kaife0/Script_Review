@@ -1,9 +1,9 @@
 flask
+gunicorn
 python-docx
 anthropic
 sherpa-onnx
 soundfile
 openpyxl
 pymongo
-rq
-redis
+google-cloud-storage

@@ -1,27 +1,22 @@
 """Audiobook Translation Review Platform. Language-first navigation; MongoDB persistence;
-RQ background pipeline; results rendered dynamically from the episode doc.
+pipeline runs synchronously in the request; results rendered dynamically from the episode doc.
 """
 import os
-import uuid
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory, send_file, abort
-from werkzeug.utils import secure_filename
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, abort, Response
 
-from core import db
+from core import db, storage
 from core.exports import build_html_export_zip, build_xlsx_export
-from core.queue import enqueue_pipeline
+from core.pipeline import run_pipeline
 from config.languages import SUPPORTED_LANGUAGES, get_language, has_tts_backend
 
-UPLOAD_ROOT = os.environ.get("AUDIO_ROOT", os.path.join(os.path.dirname(__file__), "jobs"))
-
 app = Flask(__name__)
-db.ensure_indexes()
-
-
-def _episode_dir(episode_id: str) -> str:
-    path = os.path.join(UPLOAD_ROOT, episode_id)
-    os.makedirs(path, exist_ok=True)
-    return path
+try:
+    db.ensure_indexes()
+except Exception as exc:
+    # Don't crash the whole process on a transient DB hiccup at boot; retried
+    # lazily on first real request via get_db()/episodes_collection().
+    app.logger.warning("ensure_indexes() failed at startup: %s", exc)
 
 
 def _row_class(row: dict) -> str:
@@ -76,15 +71,13 @@ def new_episode(lang_code):
                                 tts_available=has_tts_backend(lang_code, os.environ.get("TTS_BACKEND", "sherpa_onnx")))
 
     episode_id = db.create_episode(title=title, target_lang=lang_code, target_lang_name=lang["name"])
-    episode_dir = _episode_dir(episode_id)
+    storage.save_bytes(episode_id, "uploads/english.docx", english_file.read())
+    storage.save_bytes(episode_id, "uploads/translated.docx", translated_file.read())
 
-    english_path = os.path.join(episode_dir, secure_filename(f"english_{uuid.uuid4().hex}.docx"))
-    translated_path = os.path.join(episode_dir, secure_filename(f"translated_{uuid.uuid4().hex}.docx"))
-    english_file.save(english_path)
-    translated_file.save(translated_path)
-
-    db.update_episode(episode_id, english_path=english_path, translated_path=translated_path)
-    enqueue_pipeline(episode_id, english_path, translated_path)
+    try:
+        run_pipeline(episode_id)
+    except Exception:
+        pass  # status/error_message already recorded on the episode doc by run_pipeline
 
     return redirect(url_for("episode_view", episode_id=episode_id))
 
@@ -125,19 +118,18 @@ def episode_retry(episode_id):
     episode = db.get_episode(episode_id)
     if episode is None:
         abort(404)
-    english_path = episode.get("english_path")
-    translated_path = episode.get("translated_path")
-    if not english_path or not translated_path:
-        abort(400, "Original uploaded files are missing; cannot retry.")
     db.set_episode_status(episode_id, "uploaded", error_message=None)
-    enqueue_pipeline(episode_id, english_path, translated_path)
+    try:
+        run_pipeline(episode_id)
+    except Exception:
+        pass
     return redirect(url_for("episode_view", episode_id=episode_id))
 
 
 @app.route("/episode/<episode_id>/audio/<path:filename>")
 def episode_audio(episode_id, filename):
-    audio_dir = os.path.join(_episode_dir(episode_id), "audio")
-    return send_from_directory(audio_dir, filename)
+    data = storage.read_bytes(episode_id, f"audio/{filename}")
+    return Response(data, mimetype="audio/mpeg")
 
 
 @app.route("/episode/<episode_id>/row/<int:sr_no>", methods=["POST"])
