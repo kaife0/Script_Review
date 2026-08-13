@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{% block title %}Audiobook Translation Review{% endblock %}</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Arial, sans-serif; margin: 0; padding: 2rem;
+         background: #f5f5f5; color: #222; }
+  a { color: #0563c1; }
+  h1 { margin-bottom: 0.2rem; }
+  .meta { color: #666; margin-bottom: 1.5rem; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+  .card { background: #fff; border-radius: 8px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          text-decoration: none; color: inherit; display: block; }
+  .card.disabled { opacity: 0.5; cursor: not-allowed; }
+  .card h3 { margin: 0 0 0.3rem; }
+  .badge { display: inline-block; font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 4px; }
+  .badge-ok { background: #d4edda; color: #155724; }
+  .badge-warn { background: #fff3cd; color: #856404; }
+  .badge-fail { background: #f8d7da; color: #721c24; }
+  .btn { display: inline-block; background: #333; color: #fff; padding: 0.5rem 1rem; border-radius: 6px;
+         text-decoration: none; border: none; cursor: pointer; font-size: 0.95rem; }
+  .btn:hover { background: #555; }
+  table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  th, td { border: 1px solid #ddd; padding: 0.6rem 0.8rem; text-align: left; vertical-align: top; }
+  th { background: #333; color: #fff; }
+</style>
+</head>
+<body>
+{% block body %}{% endblock %}
+</body>
+</html>

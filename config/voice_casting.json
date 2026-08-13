@@ -1,0 +1,12 @@
+{
+  "italian": {
+    "release_prefix": "vits-piper-it_IT-",
+    "voices": [
+      {"id": "paola-medium", "gender": "female", "pitch_semitones": 0, "tempo": 1.0},
+      {"id": "riccardo-x_low", "gender": "male", "pitch_semitones": 0, "tempo": 1.0},
+      {"id": "miro-high", "gender": "male", "pitch_semitones": 2, "tempo": 1.05},
+      {"id": "dii-high", "gender": "male", "pitch_semitones": -2, "tempo": 0.95}
+    ],
+    "narrator_voice_id": "paola-medium"
+  }
+}

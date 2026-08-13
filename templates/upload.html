@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}New {{ lang.name }} Episode{% endblock %}
+{% block body %}
+<p class="meta"><a href="{{ url_for('lang_dashboard', lang_code=lang.code) }}">&larr; {{ lang.name }} episodes</a></p>
+<h1>New {{ lang.name }} Episode</h1>
+
+{% if not tts_available %}
+<p class="meta">No TTS voice pack is configured for {{ lang.name }} yet — this episode will get a
+full text review, but no narration audio.</p>
+{% endif %}
+
+{% if error %}<p style="color:#c00">{{ error }}</p>{% endif %}
+
+<form method="post" enctype="multipart/form-data" style="max-width:480px">
+  <p>
+    <label for="title">Episode title</label><br>
+    <input type="text" id="title" name="title" style="width:100%">
+  </p>
+  <p>
+    <label for="english_docx">English master script (.docx)</label><br>
+    <input type="file" id="english_docx" name="english_docx" accept=".docx" required>
+  </p>
+  <p>
+    <label for="translated_docx">{{ lang.name }} translated script (.docx)</label><br>
+    <input type="file" id="translated_docx" name="translated_docx" accept=".docx" required>
+  </p>
+  <button class="btn" type="submit">Upload and start review</button>
+</form>
+{% endblock %}

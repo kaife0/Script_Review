@@ -1,0 +1,124 @@
+"""Parse paired English/translated docx scripts into aligned dialogue rows."""
+from dataclasses import dataclass, asdict
+import re
+from docx import Document
+
+CHAPTER_RE = re.compile(r"^Chapter\s+(\d+)\s*:\s*(.+)$", re.IGNORECASE)
+TITLE_RE = re.compile(r"^Title\s*:\s*(.+)$", re.IGNORECASE)
+THEME_RE = re.compile(r"^Theme\s*:\s*(.+)$", re.IGNORECASE)
+QUOTED_LINE_RE = re.compile(r'^"(.*)"\s*,?\s*$')
+
+
+@dataclass
+class DialogueRow:
+    sr_no: int
+    chapter: int
+    chapter_title: str
+    speaker: str
+    english: str
+    translated: str
+
+
+def _split_speaker(line: str) -> tuple[str, str]:
+    """Split on the FIRST ': ' into (speaker, text); text may start with a stage direction."""
+    idx = line.find(": ")
+    if idx == -1:
+        return line.strip(), ""
+    return line[:idx].strip(), line[idx + 2:].strip()
+
+
+def _parse_doc(path: str) -> tuple[str, str, list[tuple[int, str, list[tuple[str, str]]]]]:
+    """Return (title, theme, chapters) where chapters = [(chapter_num, chapter_title, [(speaker, text), ...])]."""
+    doc = Document(path)
+    title = ""
+    theme = ""
+    chapters: list[tuple[int, str, list[tuple[str, str]]]] = []
+    current_lines: list[tuple[str, str]] | None = None
+    in_block = False
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+
+        if not in_block:
+            m = TITLE_RE.match(text)
+            if m:
+                title = m.group(1).strip()
+                continue
+            m = THEME_RE.match(text)
+            if m:
+                theme = m.group(1).strip()
+                continue
+            m = CHAPTER_RE.match(text)
+            if m:
+                current_lines = []
+                chapters.append((int(m.group(1)), m.group(2).strip(), current_lines))
+                continue
+            if text == "[":
+                in_block = True
+                continue
+        else:
+            if text == "]":
+                in_block = False
+                continue
+            m = QUOTED_LINE_RE.match(text)
+            if m and current_lines is not None:
+                speaker, dialogue = _split_speaker(m.group(1))
+                current_lines.append((speaker, dialogue))
+
+    return title, theme, chapters
+
+
+def parse_pair(english_path: str, translated_path: str) -> dict:
+    """Parse both docs, align by chapter index then row index. Returns rows + alignment warnings."""
+    en_title, en_theme, en_chapters = _parse_doc(english_path)
+    tr_title, tr_theme, tr_chapters = _parse_doc(translated_path)
+
+    warnings: list[str] = []
+    rows: list[DialogueRow] = []
+
+    if len(en_chapters) != len(tr_chapters):
+        warnings.append(
+            f"Chapter count mismatch: English has {len(en_chapters)}, "
+            f"translated has {len(tr_chapters)}."
+        )
+
+    chapter_count = max(len(en_chapters), len(tr_chapters))
+    sr_no = 1
+    for i in range(chapter_count):
+        en_ch = en_chapters[i] if i < len(en_chapters) else None
+        tr_ch = tr_chapters[i] if i < len(tr_chapters) else None
+
+        chapter_num = en_ch[0] if en_ch else (tr_ch[0] if tr_ch else i + 1)
+        chapter_title = en_ch[1] if en_ch else (tr_ch[1] if tr_ch else "")
+
+        en_lines = en_ch[2] if en_ch else []
+        tr_lines = tr_ch[2] if tr_ch else []
+
+        if len(en_lines) != len(tr_lines):
+            warnings.append(
+                f"Chapter {chapter_num} ('{chapter_title}') dialogue count mismatch: "
+                f"English has {len(en_lines)}, translated has {len(tr_lines)}."
+            )
+
+        line_count = max(len(en_lines), len(tr_lines))
+        for j in range(line_count):
+            en_speaker, en_text = en_lines[j] if j < len(en_lines) else ("", "")
+            _, tr_text = tr_lines[j] if j < len(tr_lines) else ("", "")
+            rows.append(DialogueRow(
+                sr_no=sr_no,
+                chapter=chapter_num,
+                chapter_title=chapter_title,
+                speaker=en_speaker,
+                english=en_text,
+                translated=tr_text,
+            ))
+            sr_no += 1
+
+    return {
+        "title": en_title or tr_title,
+        "theme": en_theme or tr_theme,
+        "rows": [asdict(r) for r in rows],
+        "warnings": warnings,
+    }

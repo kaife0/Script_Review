@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Audiobook Translation Review{% endblock %}
+{% block body %}
+<h1>Audiobook Translation Review</h1>
+<p class="meta">Pick a target language to review episodes, or upload a script in a new one.</p>
+<div class="card-grid">
+  {% for lang in languages %}
+  <a class="card" href="{{ url_for('lang_dashboard', lang_code=lang.code) }}">
+    <h3>{{ lang.name }}</h3>
+    {% if lang.has_episodes %}
+      <span class="badge badge-ok">Episodes uploaded</span>
+    {% else %}
+      <span class="badge badge-warn">No episodes yet</span>
+    {% endif %}
+    <br>
+    {% if lang.voice_backends %}
+      <span class="badge badge-ok">TTS available</span>
+    {% else %}
+      <span class="badge badge-fail">Text-only, no audio yet</span>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

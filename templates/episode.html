@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ episode.title }} — Translation Review</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Arial, sans-serif; margin: 0; padding: 2rem;
+         background: #f5f5f5; color: #222; }
+  h1 { margin-bottom: 0.2rem; }
+  .meta { color: #666; margin-bottom: 1.5rem; }
+  .actions { margin-bottom: 1.5rem; }
+  .actions a, .actions .btn { margin-right: 0.5rem; background: #333; color: #fff; padding: 0.5rem 1rem;
+    border-radius: 6px; text-decoration: none; display: inline-block; border: none; cursor: pointer; font-size: 0.95rem; }
+  .warning { background: #ffe0e0; border: 1px solid #d33; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
+  .chapter { margin-bottom: 2.5rem; }
+  .chapter h2 { border-bottom: 2px solid #333; padding-bottom: 0.3rem; }
+  table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  th, td { border: 1px solid #ddd; padding: 0.6rem 0.8rem; text-align: left; vertical-align: top; }
+  th { background: #333; color: #fff; }
+  .flag-note { background: #fff3cd; }
+  .flag-narrator { background: #dbe9ff; }
+  .comment textarea { width: 100%; min-height: 3.5rem; font-family: inherit; }
+  .legend { display: flex; gap: 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+  .swatch { display: inline-block; width: 12px; height: 12px; margin-right: 4px; border: 1px solid #999; }
+  audio { width: 220px; height: 32px; }
+  select.flag-select { font-size: 0.85rem; }
+</style>
+</head>
+<body>
+  <h1>{{ episode.title }}</h1>
+  <p class="meta">Target language: {{ episode.target_lang_name }}</p>
+
+  {% if not standalone %}
+  <div class="actions">
+    <a href="{{ url_for('lang_dashboard', lang_code=episode.target_lang) }}">&larr; All episodes</a>
+    <a href="{{ url_for('export_html', episode_id=episode._id) }}">Export as standalone HTML</a>
+    <a href="{{ url_for('export_xlsx', episode_id=episode._id) }}">Export as Excel</a>
+  </div>
+  {% endif %}
+
+  {% if episode.alignment_warnings %}
+  <div class="warning">
+    <strong>Alignment warnings:</strong>
+    <ul>{% for w in episode.alignment_warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <div class="legend">
+    <span><span class="swatch" style="background:#fff"></span>Straightforward</span>
+    <span><span class="swatch" style="background:#fff3cd"></span>Flagged (note)</span>
+    <span><span class="swatch" style="background:#dbe9ff"></span>Narrator line</span>
+  </div>
+
+  {% for chapter in episode.chapters %}
+  <section class="chapter">
+    <h2>Chapter {{ chapter.chapter_number }}: {{ chapter.title }}</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Speaker</th><th>English</th><th>{{ episode.target_lang_name }}</th>
+          <th>Reviewer Comment</th><th>Audio</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in chapter.rows %}
+        <tr class="{{ row | row_class }}">
+          <td>{{ row.sr_no }}</td>
+          <td>{{ row.speaker }}</td>
+          <td>{{ row.english }}</td>
+          <td>{{ row.translated }}</td>
+          <td class="comment">
+            {% if standalone %}
+              {{ row.review_comment or "" }}
+            {% else %}
+              <form class="row-edit-form" data-episode="{{ episode._id }}" data-sr-no="{{ row.sr_no }}">
+                <textarea name="review_comment">{{ row.review_comment or "" }}</textarea>
+                <select name="review_flag" class="flag-select">
+                  <option value="ok" {% if row.review_flag == "ok" %}selected{% endif %}>ok</option>
+                  <option value="note" {% if row.review_flag == "note" %}selected{% endif %}>note</option>
+                </select>
+                <button type="submit" class="btn" style="padding:0.2rem 0.6rem;font-size:0.8rem">Save</button>
+              </form>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.audio_path %}
+              {% if standalone %}
+                <audio controls src="audio/{{ row.audio_path }}"></audio>
+              {% else %}
+                <audio controls src="{{ url_for('episode_audio', episode_id=episode._id, filename=row.audio_path) }}"></audio>
+              {% endif %}
+            {% else %}
+              <em>no audio</em>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endfor %}
+
+  {% if not standalone %}
+  <script>
+    document.querySelectorAll(".row-edit-form").forEach(form => {
+      form.addEventListener("submit", e => {
+        e.preventDefault();
+        const episodeId = form.dataset.episode;
+        const srNo = form.dataset.srNo;
+        fetch(`/episode/${episodeId}/row/${srNo}`, {
+          method: "POST",
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+          body: new FormData(form),
+        }).then(r => r.json()).then(data => {
+          if (data.ok) {
+            const btn = form.querySelector("button");
+            const orig = btn.textContent;
+            btn.textContent = "Saved";
+            setTimeout(() => btn.textContent = orig, 1200);
+          }
+        });
+      });
+    });
+  </script>
+  {% endif %}
+</body>
+</html>

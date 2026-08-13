@@ -1,0 +1,9 @@
+flask
+python-docx
+anthropic
+sherpa-onnx
+soundfile
+openpyxl
+pymongo
+rq
+redis

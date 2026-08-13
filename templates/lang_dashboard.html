@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ lang.name }} — Episodes{% endblock %}
+{% block body %}
+<p class="meta"><a href="{{ url_for('landing') }}">&larr; All languages</a></p>
+<h1>{{ lang.name }} Episodes</h1>
+<p><a class="btn" href="{{ url_for('new_episode', lang_code=lang.code) }}">+ Create New</a></p>
+
+{% if episodes %}
+<table>
+  <thead><tr><th>Title</th><th>Status</th><th>Chapters</th><th>Rows</th><th>Created</th><th></th></tr></thead>
+  <tbody>
+  {% for ep in episodes %}
+    <tr>
+      <td>{{ ep.title }}</td>
+      <td>
+        {% if ep.status == "done" %}<span class="badge badge-ok">done</span>
+        {% elif ep.status == "failed" %}<span class="badge badge-fail">failed</span>
+        {% else %}<span class="badge badge-warn">{{ ep.status }}</span>{% endif %}
+      </td>
+      <td>{{ ep.chapter_count }}</td>
+      <td>{{ ep.row_count }}</td>
+      <td>{{ ep.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td><a href="{{ url_for('episode_view', episode_id=ep._id) }}">
+        {% if ep.status == "done" %}View results{% else %}View progress{% endif %}
+      </a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="meta">No episodes for {{ lang.name }} yet.</p>
+{% endif %}
+{% endblock %}
