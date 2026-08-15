@@ -14,8 +14,8 @@
 
 {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
 
-<div class="panel" style="padding:1.75rem; max-width:520px;">
-<form class="stack" method="post" enctype="multipart/form-data">
+<div class="panel" id="upload-panel" style="padding:1.75rem; max-width:520px;">
+<form class="stack" id="upload-form" method="post" enctype="multipart/form-data">
   <p>
     <label for="title">Episode title</label>
     <input type="text" id="title" name="title" placeholder="e.g. Episode 12 — The Lost Kite">
@@ -28,7 +28,42 @@
     <label for="translated_docx">{{ lang.name }} translated script (.docx)</label>
     <input type="file" id="translated_docx" name="translated_docx" accept=".docx" required>
   </p>
-  <button class="btn" type="submit">Upload and start review</button>
+  <button class="btn" type="submit" id="upload-submit">Upload and start review</button>
 </form>
 </div>
+
+<div class="panel" id="upload-processing" style="display:none; max-width:520px; padding:1.75rem;">
+  <div style="display:flex; align-items:center; gap:0.9rem; margin-bottom:1.25rem;">
+    <span class="spinner"></span>
+    <span style="font-size:1.05rem; font-weight:600;">Uploading and starting the review&hellip;</span>
+  </div>
+  <div class="skeleton-line" style="width:85%"></div>
+  <div class="skeleton-line" style="width:70%"></div>
+  <div class="skeleton-line" style="width:92%"></div>
+  <p class="meta" style="margin:1rem 0 0;">This can take a minute or two depending on script length — no need to click again, the page will move on automatically.</p>
+</div>
+
+<style>
+  .spinner { width: 20px; height: 20px; border-radius: 50%; border: 3px solid var(--border);
+    border-top-color: var(--primary); animation: spin 0.8s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .skeleton-line { height: 12px; border-radius: 6px; margin-bottom: 0.6rem;
+    background: linear-gradient(90deg, #eef0f3 25%, #e3e5e9 37%, #eef0f3 63%);
+    background-size: 400% 100%; animation: shimmer 1.4s ease infinite; }
+  @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+</style>
+
+<script>
+  document.getElementById("upload-form").addEventListener("submit", function (e) {
+    const submitBtn = document.getElementById("upload-submit");
+    if (submitBtn.disabled) {
+      e.preventDefault();
+      return;
+    }
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Starting…";
+    document.getElementById("upload-panel").style.display = "none";
+    document.getElementById("upload-processing").style.display = "block";
+  });
+</script>
 {% endblock %}

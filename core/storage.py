@@ -55,3 +55,16 @@ def list_files(episode_id: str, prefix: str) -> list[str]:
     if not os.path.isdir(dir_path):
         return []
     return os.listdir(dir_path)
+
+
+def delete_episode_files(episode_id: str) -> None:
+    """Remove every uploaded/generated file for this episode."""
+    if using_gcs():
+        bucket = _bucket_client()
+        for blob in bucket.client.list_blobs(bucket, prefix=f"{episode_id}/"):
+            blob.delete()
+        return
+    import shutil
+    dir_path = os.path.join(_LOCAL_ROOT, episode_id)
+    if os.path.isdir(dir_path):
+        shutil.rmtree(dir_path)

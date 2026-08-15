@@ -32,7 +32,7 @@ class AnthropicClient(LLMClient):
 class GeminiClient(LLMClient):
     def __init__(self):
         self._api_key = os.environ["GEMINI_API_KEY"]
-        self._model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+        self._model = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
 
     def complete(self, system: str, user: str) -> str:
         url = GEMINI_URL.format(model=self._model)
@@ -45,10 +45,10 @@ class GeminiClient(LLMClient):
         last_error = None
         for attempt in range(3):
             response = requests.post(url, params={"key": self._api_key}, json=body, timeout=60)
-            if response.status_code < 500:
+            if response.status_code not in (429, 500, 502, 503, 504):
                 break
             last_error = response
-            time.sleep(2 ** attempt)
+            time.sleep(2 ** attempt * 5)
         else:
             last_error.raise_for_status()
 

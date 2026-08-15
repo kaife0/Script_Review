@@ -3,11 +3,15 @@ pipeline runs synchronously in the request; results rendered dynamically from th
 """
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, abort, Response
 
 from core import db, storage
 from core.exports import build_html_export_zip, build_xlsx_export
-from core.pipeline import run_pipeline
+from core.jobs import start_pipeline
 from config.languages import SUPPORTED_LANGUAGES, get_language, has_tts_backend
 
 app = Flask(__name__)
@@ -74,10 +78,7 @@ def new_episode(lang_code):
     storage.save_bytes(episode_id, "uploads/english.docx", english_file.read())
     storage.save_bytes(episode_id, "uploads/translated.docx", translated_file.read())
 
-    try:
-        run_pipeline(episode_id)
-    except Exception:
-        pass  # status/error_message already recorded on the episode doc by run_pipeline
+    start_pipeline(episode_id)
 
     return redirect(url_for("episode_view", episode_id=episode_id))
 
@@ -99,17 +100,13 @@ def episode_status(episode_id):
     episode = db.get_episode(episode_id)
     if episode is None:
         abort(404)
-    total_rows = sum(len(c["rows"]) for c in episode["chapters"])
-    audio_done = sum(
-        1 for c in episode["chapters"] for r in c["rows"] if r["audio_status"] == "done"
-    )
+    progress = db.progress_counts(episode)
     verified, _ = db.verification_counts(episode)
     return jsonify({
         "status": episode["status"],
         "error_message": episode.get("error_message"),
-        "total_rows": total_rows,
-        "audio_done": audio_done,
         "verified_rows": verified,
+        **progress,
     })
 
 
@@ -119,11 +116,18 @@ def episode_retry(episode_id):
     if episode is None:
         abort(404)
     db.set_episode_status(episode_id, "uploaded", error_message=None)
-    try:
-        run_pipeline(episode_id)
-    except Exception:
-        pass
+    start_pipeline(episode_id)
     return redirect(url_for("episode_view", episode_id=episode_id))
+
+
+@app.route("/episode/<episode_id>/delete", methods=["POST"])
+def episode_delete(episode_id):
+    episode = db.get_episode(episode_id)
+    if episode is None:
+        abort(404)
+    storage.delete_episode_files(episode_id)
+    db.delete_episode(episode_id)
+    return redirect(url_for("lang_dashboard", lang_code=episode["target_lang"]))
 
 
 @app.route("/episode/<episode_id>/audio/<path:filename>")

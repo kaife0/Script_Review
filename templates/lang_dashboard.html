@@ -11,7 +11,7 @@
 {% if episodes %}
 <div class="panel">
 <table>
-  <thead><tr><th>Title</th><th>Status</th><th>Chapters</th><th>Rows</th><th>Created</th><th></th></tr></thead>
+  <thead><tr><th>Title</th><th>Status</th><th>Chapters</th><th>Rows</th><th>Created</th><th></th><th></th></tr></thead>
   <tbody>
   {% for ep in episodes %}
     <tr>
@@ -19,7 +19,7 @@
       <td>
         {% if ep.status == "done" %}<span class="badge badge-ok">done</span>
         {% elif ep.status == "failed" %}<span class="badge badge-fail">failed</span>
-        {% else %}<span class="badge badge-warn">{{ ep.status }}</span>{% endif %}
+        {% else %}<span class="badge badge-warn">{{ ep.status | replace("_", " ") }}</span>{% endif %}
       </td>
       <td>{{ ep.chapter_count }}</td>
       <td>{{ ep.row_count }}</td>
@@ -27,6 +27,13 @@
       <td><a href="{{ url_for('episode_view', episode_id=ep._id) }}">
         {% if ep.status == "done" %}View results &rarr;{% else %}View progress &rarr;{% endif %}
       </a></td>
+      <td>
+        <form method="post" action="{{ url_for('episode_delete', episode_id=ep._id) }}"
+              data-confirm="Delete &quot;{{ ep.title }}&quot; permanently? This removes the episode and all its files."
+              data-pending-text="Deleting…">
+          <button type="submit" class="btn btn-secondary btn-sm" style="color:#b91c1c; border-color:#fca5a5;">Delete</button>
+        </form>
+      </td>
     </tr>
   {% endfor %}
   </tbody>

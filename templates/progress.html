@@ -7,19 +7,57 @@
 
 <div class="panel" style="padding:2rem;" id="status-box">
   {% if episode.status == "failed" %}
-    <div class="alert alert-error" style="margin-bottom:1.25rem;">{{ episode.error_message }}</div>
-    <p class="meta" style="margin-bottom:1rem;">You can retry — completed work (already-reviewed rows and
-    already-generated audio) won't be redone.</p>
-    <form method="post" action="{{ url_for('episode_retry', episode_id=episode._id) }}">
-      <button class="btn" type="submit">Retry</button>
-    </form>
-  {% else %}
-    <div style="display:flex; align-items:center; gap:0.9rem; margin-bottom:1.1rem;">
-      <span class="spinner"></span>
-      <span style="font-size:1.05rem; font-weight:600;" id="status-text">{{ episode.status|capitalize }}&hellip;</span>
+    <div class="alert alert-error" style="margin-bottom:1.25rem;" id="error-message">{{ episode.error_message }}</div>
+    <p class="meta" style="margin-bottom:1rem;">You can retry — completed work already saved won't be redone.</p>
+    <div class="actions-row" style="margin-bottom:0;">
+      <form method="post" action="{{ url_for('episode_retry', episode_id=episode._id) }}" data-pending-text="Retrying…">
+        <button class="btn" type="submit">Retry</button>
+      </form>
+      <form method="post" action="{{ url_for('episode_delete', episode_id=episode._id) }}"
+            data-confirm="Delete this episode and all its files permanently?" data-pending-text="Deleting…">
+        <button class="btn btn-secondary" type="submit" style="color:#b91c1c; border-color:#fca5a5;">Delete episode</button>
+      </form>
     </div>
-    <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:8%"></div></div>
-    <p class="meta" id="progress-detail" style="margin:0.6rem 0 0;">Stages: parsing &rarr; reviewing &rarr; narration audio</p>
+  {% else %}
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.4rem;">
+      <div style="display:flex; align-items:center; gap:0.9rem;">
+        <span class="spinner"></span>
+        <span style="font-size:1.05rem; font-weight:600;" id="status-text">Starting&hellip;</span>
+      </div>
+      <form method="post" action="{{ url_for('episode_delete', episode_id=episode._id) }}"
+            data-confirm="Cancel and delete this episode? What has been processed so far will be lost."
+            data-pending-text="Cancelling…">
+        <button class="btn btn-secondary" type="submit" style="font-size:0.8rem; padding:0.4rem 0.8rem;">Cancel &amp; delete</button>
+      </form>
+    </div>
+
+    <ul class="stage-list" id="stage-list">
+      <li class="stage" data-stage="parsing">
+        <span class="stage-icon"></span>
+        <span class="stage-label">Reading the scripts</span>
+      </li>
+      <li class="stage" data-stage="translating_titles">
+        <span class="stage-icon"></span>
+        <span class="stage-label">Translating title &amp; chapter names</span>
+      </li>
+      <li class="stage" data-stage="reviewing">
+        <span class="stage-icon"></span>
+        <span class="stage-label">AI review</span>
+        <span class="stage-count" id="count-reviewing"></span>
+      </li>
+      <li class="stage" data-stage="finding_difficult_words">
+        <span class="stage-icon"></span>
+        <span class="stage-label">Finding difficult words</span>
+        <span class="stage-count" id="count-words"></span>
+      </li>
+      <li class="stage" data-stage="tts">
+        <span class="stage-icon"></span>
+        <span class="stage-label">Generating narration audio</span>
+        <span class="stage-count" id="count-audio"></span>
+      </li>
+    </ul>
+
+    <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:4%"></div></div>
   {% endif %}
 </div>
 
@@ -27,35 +65,76 @@
   .spinner { width: 20px; height: 20px; border-radius: 50%; border: 3px solid var(--border);
     border-top-color: var(--primary); animation: spin 0.8s linear infinite; flex-shrink: 0; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .progress-track { background: #eef0f3; border-radius: 999px; height: 10px; overflow: hidden; }
+  .progress-track { background: #eef0f3; border-radius: 999px; height: 10px; overflow: hidden; margin-top: 1.2rem; }
   .progress-fill { background: linear-gradient(90deg, var(--primary), #7c6df0); height: 100%;
-    border-radius: 999px; transition: width 0.4s ease; }
+    border-radius: 999px; transition: width 0.5s ease; }
+
+  .stage-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+  .stage { display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0.15rem;
+    font-size: 0.9rem; color: var(--text-muted); transition: color 0.2s ease; }
+  .stage-icon { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border);
+    flex-shrink: 0; position: relative; transition: all 0.2s ease; }
+  .stage.active .stage-icon { border-color: var(--primary); }
+  .stage.active .stage-icon::after { content: ""; position: absolute; inset: 3px; border-radius: 50%;
+    background: var(--primary); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .stage.done .stage-icon { border-color: #16a34a; background: #16a34a; }
+  .stage.done .stage-icon::after { content: "✓"; position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center; color: #fff; font-size: 0.7rem; font-weight: 700; }
+  .stage.active, .stage.done { color: var(--text); font-weight: 600; }
+  .stage-count { color: var(--text-muted); font-weight: 500; font-size: 0.82rem; margin-left: auto; }
 </style>
 
 <script>
   const episodeId = {{ episode._id | tojson }};
-  const STAGE_PROGRESS = { uploaded: 5, parsing: 25, reviewing: 55, tts: 80, done: 100 };
+  const STAGES = ["parsing", "translating_titles", "reviewing", "finding_difficult_words", "tts"];
+  const STAGE_LABELS = {
+    parsing: "Reading the scripts", translating_titles: "Translating title & chapter names",
+    reviewing: "Running the AI review", finding_difficult_words: "Finding difficult words",
+    tts: "Generating narration audio", uploaded: "Starting",
+  };
+
+  function applyProgress(data) {
+    const currentIndex = STAGES.indexOf(data.status);
+    document.querySelectorAll(".stage").forEach(li => {
+      const stageIndex = STAGES.indexOf(li.dataset.stage);
+      li.classList.toggle("done", currentIndex > stageIndex || data.status === "done");
+      li.classList.toggle("active", stageIndex === currentIndex && data.status !== "done");
+    });
+
+    const total = data.total_rows || 0;
+    document.getElementById("count-reviewing").textContent = total ? `${data.reviewed_rows}/${total}` : "";
+    document.getElementById("count-words").textContent = total ? `${data.words_found_rows}/${total}` : "";
+    document.getElementById("count-audio").textContent = total ? `${data.audio_done_rows}/${total}` : "";
+
+    const statusText = document.getElementById("status-text");
+    if (statusText) statusText.textContent = STAGE_LABELS[data.status] || data.status;
+
+    const fill = document.getElementById("progress-fill");
+    if (fill) {
+      const stageWeight = 100 / STAGES.length;
+      let pct = Math.max(4, currentIndex * stageWeight);
+      if (total && ["reviewing", "finding_difficult_words", "tts"].includes(data.status)) {
+        const doneCount = data.status === "reviewing" ? data.reviewed_rows
+          : data.status === "finding_difficult_words" ? data.words_found_rows : data.audio_done_rows;
+        pct += (doneCount / total) * stageWeight;
+      }
+      fill.style.width = Math.min(pct, 100) + "%";
+    }
+  }
+
   function poll() {
     fetch(`/episode/${episodeId}/status`).then(r => r.json()).then(data => {
-      const label = data.status.charAt(0).toUpperCase() + data.status.slice(1);
-      document.getElementById("status-text").textContent = label + "…";
-      const fill = document.getElementById("progress-fill");
-      if (fill) fill.style.width = (STAGE_PROGRESS[data.status] || 10) + "%";
-      const detail = document.getElementById("progress-detail");
-      if (detail && data.total_rows) {
-        detail.textContent = `Narration audio: ${data.audio_done}/${data.total_rows} rows`;
-      }
-      if (data.status === "done") {
+      if (data.status === "done" || data.status === "failed") {
         window.location.reload();
-      } else if (data.status !== "failed") {
-        setTimeout(poll, 2000);
-      } else {
-        window.location.reload();
+        return;
       }
-    });
+      applyProgress(data);
+      setTimeout(poll, 1500);
+    }).catch(() => setTimeout(poll, 3000));
   }
   {% if episode.status not in ("done", "failed") %}
-  setTimeout(poll, 2000);
+  poll();
   {% endif %}
 </script>
 {% endblock %}

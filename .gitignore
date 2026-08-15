@@ -5,3 +5,7 @@ __pycache__/
 jobs/
 voices/
 scratch_*
+tools/
+*.db
+*.sqlite
+*.log

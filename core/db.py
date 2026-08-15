@@ -80,6 +80,10 @@ def set_episode_status(episode_id: str, status: str, error_message: str | None =
     update_episode(episode_id, status=status, error_message=error_message)
 
 
+def delete_episode(episode_id: str) -> None:
+    episodes_collection().delete_one({"_id": ObjectId(episode_id)})
+
+
 def update_row(episode_id: str, sr_no: int, **fields) -> None:
     """Update a single row (by sr_no) inside whichever chapter contains it, via arrayFilters."""
     set_fields = {f"chapters.$[c].rows.$[r].{k}": v for k, v in fields.items()}
@@ -106,6 +110,19 @@ def titles_translated(episode: dict) -> bool:
 
 def row_audio_done(row: dict) -> bool:
     return row.get("audio_status") == "done"
+
+
+def progress_counts(episode: dict) -> dict:
+    """Per-stage completion counts, used to render a live progress breakdown."""
+    rows = [row for chapter in episode["chapters"] for row in chapter["rows"]]
+    total = len(rows)
+    return {
+        "total_rows": total,
+        "titles_translated": titles_translated(episode),
+        "reviewed_rows": sum(1 for r in rows if r.get("review_comment") is not None),
+        "words_found_rows": sum(1 for r in rows if r.get("difficult_words") is not None),
+        "audio_done_rows": sum(1 for r in rows if row_audio_done(r)),
+    }
 
 
 def verification_counts(episode: dict) -> tuple[int, int]:

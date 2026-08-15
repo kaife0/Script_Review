@@ -96,11 +96,34 @@
   .alert { padding: 0.85rem 1rem; border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.9rem; }
   .alert-error { background: var(--fail-bg); color: var(--fail-text); border: 1px solid #fca5a5; }
   .alert-info { background: var(--primary-soft); color: var(--primary-dark); border: 1px solid #c7d2fe; }
+
+  .btn-spinner { width: 13px; height: 13px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: #fff; animation: btn-spin 0.7s linear infinite; display: inline-block; }
+  .btn-secondary .btn-spinner { border-color: var(--border); border-top-color: var(--text-muted); }
+  @keyframes btn-spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 <div class="page">
 {% block body %}{% endblock %}
 </div>
+<script>
+  document.addEventListener("submit", function (e) {
+    const form = e.target;
+    if (!form.matches("[data-confirm]") && !form.matches("[data-pending-text]")) return;
+
+    const confirmMsg = form.dataset.confirm;
+    if (confirmMsg && !confirm(confirmMsg)) {
+      e.preventDefault();
+      return;
+    }
+
+    const btn = form.querySelector("button[type=submit]");
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    btn.dataset.originalText = btn.innerHTML;
+    btn.innerHTML = `<span class="btn-spinner"></span> ${form.dataset.pendingText || "Working…"}`;
+  });
+</script>
 </body>
 </html>
