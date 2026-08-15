@@ -1,6 +1,6 @@
 # Audiobook Translation Review Platform
 
-A web app for reviewing translated kids' audiobook scripts: upload an English master script and a translated version, get an AI-assisted line-by-line review, and (for supported languages) auto-generated narration audio per character.
+A web app for reviewing translated kids' audiobook scripts: upload an English master script and a translated version, get an AI-assisted line-by-line review, and get auto-generated narration audio, one distinct voice per character.
 
 **Live URL:** https://script-review-892635735954.us-central1.run.app
 
@@ -8,68 +8,47 @@ A web app for reviewing translated kids' audiobook scripts: upload an English ma
 
 ## What it does
 
-1. Reviewer picks a target language and uploads two `.docx` files — the English master script and the translated script.
-2. The app parses both, lining up dialogue chapter-by-chapter, row-by-row.
-3. Claude (Anthropic's LLM) reviews each line and flags it `ok` or `note` with a short comment.
-4. For languages with voice packs configured, each character gets a distinct synthesized voice (offline TTS, no per-request cloud cost) reading their translated lines.
-5. Reviewer sees a results page with English/translated side by side, the AI comment, the audio clip, and can edit comments, flip flags, and mark lines as human-verified — with a live progress bar showing how much of the episode has been checked.
-6. Results can be exported as a standalone HTML+audio bundle or an Excel workbook at any time.
+1. Reviewer picks a target language (Italian, German, Spanish, or French) and uploads two `.docx` files — the English master script and the translated script.
+2. The app reads both and lines up the dialogue, chapter by chapter, line by line.
+3. An AI model reviews each line and flags it `ok` or `note` with a short comment explaining why.
+4. Each character in the script gets a distinct computer-generated voice reading their translated lines.
+5. The reviewer gets a results page: English and translated text side by side, the AI's comment, an audio clip per line, and the ability to edit comments, change flags, and check off lines as reviewed — with a progress bar showing how much of the episode is done.
+6. Results can be downloaded at any time as a standalone webpage (with audio included) or as an Excel file.
 
 ---
 
-## Tech stack
+## What it's built with
 
-| Layer | Choice | Why |
-|---|---|---|
-| Backend | Flask (Python) | Simple, direct control over routes and rendering |
-| Database | MongoDB Atlas | One document per episode, chapters/rows embedded — no joins needed for this shape of data |
-| File storage | Google Cloud Storage | Uploaded scripts and generated audio; Cloud Run's own disk is wiped on every restart |
-| LLM review | Anthropic Claude API | Batched per-chapter calls, JSON-validated, retries then falls back to per-row calls if the model's output doesn't match |
-| Text-to-speech | sherpa-onnx (offline, Piper/VITS voices) | No cloud TTS bill, no API key required; pitch/tempo varied per character via ffmpeg |
-| Hosting | Google Cloud Run | Pay-per-use container hosting, scales to zero when idle |
-| Build | Cloud Build (via `gcloud run deploy --source`) | Builds the Docker image from source automatically, no local Docker needed |
+- **Flask** — the web application itself (Python).
+- **MongoDB** — the database. Every episode (its chapters, lines, comments, flags, review status) is stored as one document.
+- **Google Cloud Storage** — where uploaded scripts and generated audio clips are kept.
+- **Anthropic (Claude)** — the AI model that reviews each translated line.
+- **sherpa-onnx** — free, offline text-to-speech software that turns translated text into spoken audio, no per-use cost.
+- **Google Cloud Run** — where the whole app is hosted. It only costs money while it's actually being used; it goes idle (and free) when nobody's using it.
 
 ---
 
-## Architecture: how a request actually flows
+## How it works, step by step
 
-```
-Browser
-  │
-  ▼
-Cloud Run (Flask app, containerized)
-  │
-  ├──► MongoDB Atlas        (episode data: chapters, rows, review comments, flags, verification state)
-  ├──► Google Cloud Storage (uploaded .docx files, generated .mp3 audio clips)
-  └──► Anthropic API        (LLM review calls)
-```
+**1. You open the site.** It loads instantly — Cloud Run starts it up on demand.
 
-Everything runs as **one Cloud Run service** — no separate background worker, no message queue. When a script is uploaded, the whole pipeline (parse → review → narrate) runs synchronously inside that single request. This was a deliberate simplification for this app's scale (single reviewer, personal use): it avoids running and paying for an always-on worker process, at the cost of the browser waiting while a script processes.
+**2. You upload two scripts.** They're saved to cloud storage right away.
 
----
+**3. The app processes the episode**, right there while you wait:
+   - Reads both documents and matches up each line of dialogue between English and the translation.
+   - Sends the lines to the AI for review, chapter by chapter, and gets back a comment and a flag for each one.
+   - Generates spoken audio for every translated line, using a different voice for each character so it doesn't sound like one narrator reading everyone's parts.
 
-## The processing pipeline, step by step
+**4. Everything is saved as it happens**, not just at the end. This means if something goes wrong partway through, restarting the job doesn't start over from scratch — it only redoes the part that failed.
 
-1. **Parse** — the two `.docx` files are downloaded from GCS, read with `python-docx`, and split into chapters and `"Speaker: line"` dialogue rows. English and translated rows are aligned by chapter and position; mismatches are flagged as warnings, not hard failures.
-2. **Review** — each chapter's rows are sent to Claude in a single batched call, asking for a JSON array of `{comment, flag}` per row. If the response doesn't parse or its length doesn't match, it retries once, then falls back to reviewing each row individually — so a single bad response never silently drops feedback.
-3. **Narrate** *(only for languages with a configured voice pack — currently Italian)* — each character in the episode is assigned a distinct voice from a small pool (narrator gets a fixed voice; others round-robin), synthesized offline with sherpa-onnx, with slight pitch/tempo shifts per voice so characters sound distinct. Clips are uploaded to GCS as they're made.
+**5. You review the results.** Every line shows the original English, the translation, the AI's comment, and a play button for the audio. You can correct the AI's comment, change its flag, and tick a "done" box per line as you personally verify it — a running progress bar tracks how much of the episode you've gotten through.
 
-Every stage writes its results into MongoDB as it completes — not all at once at the end. That matters for retries: if something fails partway (say, one TTS call errors), retrying doesn't start over. It re-checks what's already saved and only redoes the missing pieces.
+**6. You can export anytime** — either a self-contained webpage with all the audio bundled in (works without internet, good for sharing), or an Excel spreadsheet with the same information.
 
 ---
 
-## The review page
+## Current status
 
-- Side-by-side English and translated text per line, color-coded (flagged lines and narrator lines stand out).
-- Inline editing: change the AI's comment or flip its `ok`/`note` flag directly on the page, saved instantly.
-- **Human verification tracking**: each line has a "Mark done" toggle, separate from the AI's flag — this is the reviewer's own checklist. A progress bar at the top shows live completion (e.g. "14 / 20 lines marked done") as you work through the episode.
-- Audio player inline per line, for languages with narration.
-- Export buttons for a standalone HTML+audio zip (works offline, no server needed) or an Excel report.
+**Working:** the website, uploading, the review page, editing, the progress tracker, exports, and voices are set up for all four languages (Italian, German, Spanish, French).
 
----
-
-## What's deployed vs. what's still manual
-
-**Working now:** hosting, database, file storage, parsing, the review page UI, exports, human verification tracking.
-
-**Not yet wired up:** the Anthropic API key (LLM review step) — intentionally held back pending a model choice, so uploads currently stop before the review stage. TTS is Italian-only for now, since that's the only language with voice models baked into the deployed image; other languages get a text-only review until voice packs are added for them.
+**Not turned on yet:** the AI review step needs an API key that hasn't been added yet — this is intentional, waiting on a decision about which AI model to use. Until that's added, uploads won't complete the full process. Voice generation for the three newer languages (German, Spanish, French) is wired up the same way as Italian's, but hasn't been listened to yet since it only runs after the AI review step.

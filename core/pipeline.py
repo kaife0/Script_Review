@@ -1,17 +1,18 @@
-"""Idempotent episode pipeline: parse -> LLM review -> TTS. Writes incrementally to Mongo
-so a retry on the same episode_id skips whatever stage/row already completed.
+"""Idempotent episode pipeline: parse -> translate titles -> review -> difficult words -> TTS.
+Writes incrementally to Mongo so a retry on the same episode_id skips whatever already completed.
 """
 import os
 import tempfile
 
-from anthropic import Anthropic
-
 from core import db, storage
-from core.llm_review import review_chapter
+from core.llm_client import get_llm_client
+from core.llm_review import review_chapter, find_difficult_words, translate_titles
 from core.parsing import parse_pair
 from core.tts import get_backend
 from core.voice_registry import VoicePackMissingError, cast_voices
 from config.languages import has_tts_backend, voice_key
+
+NARRATOR_VOICE_TARGET = "Narrator"
 
 
 def _rows_to_chapters(parsed: dict) -> list[dict]:
@@ -21,6 +22,8 @@ def _rows_to_chapters(parsed: dict) -> list[dict]:
         chapter = chapters.setdefault(row["chapter"], {
             "chapter_number": row["chapter"],
             "title": row["chapter_title"],
+            "translated_title": None,
+            "title_audio_path": None,
             "rows": [],
         })
         chapter["rows"].append({
@@ -28,6 +31,12 @@ def _rows_to_chapters(parsed: dict) -> list[dict]:
             "speaker": row["speaker"],
             "english": row["english"],
             "translated": row["translated"],
+            "reviewer_text": row["translated"],
+            "reviewer_history": [],
+            "reviewer_history_index": -1,
+            "reviewer_complete": False,
+            "comments": {target: [] for target in db.COMMENT_TARGETS},
+            "difficult_words": None,
             "review_comment": None,
             "review_flag": None,
             "audio_path": None,
@@ -50,14 +59,49 @@ def _run_parse_stage(episode_id: str, episode: dict) -> dict:
 
     chapters = _rows_to_chapters(parsed)
     db.set_episode_chapters(episode_id, chapters)
+    db.update_episode(episode_id, title=parsed["title"], translated_title=None, title_audio_path=None)
     if parsed["warnings"]:
         db.update_episode(episode_id, alignment_warnings=parsed["warnings"])
     return db.get_episode(episode_id)
 
 
+def _run_title_translation_stage(episode_id: str, episode: dict) -> dict:
+    if db.titles_translated(episode):
+        return episode
+
+    db.set_episode_status(episode_id, "translating_titles")
+    client = get_llm_client()
+    target_lang = episode["target_lang_name"]
+
+    titles = [episode["title"]] + [c["title"] for c in episode["chapters"]]
+    translated = translate_titles(client, titles, target_lang)
+    episode_title, chapter_titles = translated[0], translated[1:]
+
+    audio_lang = voice_key(episode["target_lang"])
+    tts_enabled = has_tts_backend(episode["target_lang"], os.environ.get("TTS_BACKEND", "sherpa_onnx"))
+    backend = get_backend() if tts_enabled else None
+    narrator_voice = cast_voices(audio_lang, [NARRATOR_VOICE_TARGET])[NARRATOR_VOICE_TARGET] if tts_enabled else None
+
+    def _narrate(text: str, filename: str) -> str | None:
+        if not tts_enabled or not text.strip():
+            return None
+        audio_bytes = backend.synthesize(text, narrator_voice, audio_lang)
+        storage.save_bytes(episode_id, f"audio/{filename}", audio_bytes)
+        return filename
+
+    episode_audio = _narrate(episode_title, "title.mp3")
+    db.set_episode_title_translation(episode_id, episode_title, episode_audio)
+
+    for chapter, title in zip(episode["chapters"], chapter_titles):
+        chapter_audio = _narrate(title, f"chapter_{chapter['chapter_number']}_title.mp3")
+        db.set_chapter_title_translation(episode_id, chapter["chapter_number"], title, chapter_audio)
+
+    return db.get_episode(episode_id)
+
+
 def _run_review_stage(episode_id: str, episode: dict) -> dict:
     db.set_episode_status(episode_id, "reviewing")
-    client = Anthropic()
+    client = get_llm_client()
     for chapter in episode["chapters"]:
         if db.chapter_rows_reviewed(chapter):
             continue
@@ -65,6 +109,18 @@ def _run_review_stage(episode_id: str, episode: dict) -> dict:
         for row, review in zip(chapter["rows"], reviews):
             db.update_row(episode_id, row["sr_no"],
                            review_comment=review["comment"], review_flag=review["flag"])
+    return db.get_episode(episode_id)
+
+
+def _run_difficult_words_stage(episode_id: str, episode: dict) -> dict:
+    db.set_episode_status(episode_id, "finding_difficult_words")
+    client = get_llm_client()
+    for chapter in episode["chapters"]:
+        if db.chapter_words_found(chapter):
+            continue
+        results = find_difficult_words(client, chapter["rows"])
+        for row, result in zip(chapter["rows"], results):
+            db.update_row(episode_id, row["sr_no"], difficult_words=result["words"])
     return db.get_episode(episode_id)
 
 
@@ -105,8 +161,9 @@ def _run_tts_stage(episode_id: str, episode: dict) -> dict:
 
 
 def run_pipeline(episode_id: str) -> None:
-    """Run parse -> review -> TTS for an episode. Idempotent: skips stages/rows already done.
-    Expects english.docx/translated.docx already saved under uploads/ for this episode.
+    """Run parse -> translate titles -> review -> difficult words -> TTS for an episode.
+    Idempotent: skips stages/rows already done. Expects english.docx/translated.docx
+    already saved under uploads/ for this episode.
     """
     try:
         episode = db.get_episode(episode_id)
@@ -116,7 +173,9 @@ def run_pipeline(episode_id: str) -> None:
         if not episode["chapters"]:
             episode = _run_parse_stage(episode_id, episode)
 
+        episode = _run_title_translation_stage(episode_id, episode)
         episode = _run_review_stage(episode_id, episode)
+        episode = _run_difficult_words_stage(episode_id, episode)
         episode = _run_tts_stage(episode_id, episode)
 
         db.set_episode_status(episode_id, "done")

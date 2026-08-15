@@ -1,0 +1,34 @@
+{% macro comment_toggle(target, row) %}
+{% set thread = row.comments[target] %}
+<button type="button" class="comment-toggle" title="Comments">
+  💬 <span class="count {{ 'zero' if not thread }}">{{ thread | length }}</span>
+</button>
+{% endmacro %}
+
+{% macro comment_panel(target, row, episode_id) %}
+{% set thread = row.comments[target] %}
+<div class="comment-panel" data-sr-no="{{ row.sr_no }}" data-target="{{ target }}">
+  <div class="comment-thread-list">
+    {% for c in thread %}
+    <div class="comment-thread {{ 'resolved' if c.resolved }}" data-comment-id="{{ c.id }}">
+      <div class="comment-item"><span class="author">{{ c.author }}</span>: {{ c.text }}</div>
+      <div class="comment-replies">
+        {% for r in c.replies %}
+        <div class="comment-item"><span class="author">{{ r.author }}</span>: {{ r.text }}</div>
+        {% endfor %}
+      </div>
+      <div class="comment-thread-actions">
+        <button type="button" data-act="reply">Reply</button>
+        <button type="button" data-act="resolve">{{ 'Reopen' if c.resolved else 'Resolve' }}</button>
+      </div>
+      <form class="comment-new-form" data-act="reply-form" style="display:none">
+        <input type="text" placeholder="Write a reply…" required>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  <form class="comment-new-form top-level">
+    <input type="text" placeholder="Add a comment…" required>
+  </form>
+</div>
+{% endmacro %}

@@ -2,6 +2,7 @@ flask
 gunicorn
 python-docx
 anthropic
+requests
 sherpa-onnx
 soundfile
 openpyxl

@@ -156,6 +156,81 @@ def update_row(episode_id, sr_no):
     return redirect(url_for("episode_view", episode_id=episode_id))
 
 
+@app.route("/episode/<episode_id>/row/<int:sr_no>/reviewer-text", methods=["POST"])
+def update_reviewer_text(episode_id, sr_no):
+    episode = db.get_episode(episode_id)
+    if episode is None:
+        abort(404)
+    db.set_reviewer_text(episode_id, sr_no, request.form.get("text", ""))
+    return _reviewer_text_response(episode_id, sr_no)
+
+
+@app.route("/episode/<episode_id>/row/<int:sr_no>/reviewer-text/undo", methods=["POST"])
+def undo_reviewer_text(episode_id, sr_no):
+    db.move_reviewer_history(episode_id, sr_no, "undo")
+    return _reviewer_text_response(episode_id, sr_no)
+
+
+@app.route("/episode/<episode_id>/row/<int:sr_no>/reviewer-text/redo", methods=["POST"])
+def redo_reviewer_text(episode_id, sr_no):
+    db.move_reviewer_history(episode_id, sr_no, "redo")
+    return _reviewer_text_response(episode_id, sr_no)
+
+
+def _reviewer_text_response(episode_id, sr_no):
+    episode = db.get_episode(episode_id)
+    row = next(r for c in episode["chapters"] for r in c["rows"] if r["sr_no"] == sr_no)
+    return jsonify({
+        "ok": True, "text": row["reviewer_text"],
+        "can_undo": row["reviewer_history_index"] > 0,
+        "can_redo": row["reviewer_history_index"] < len(row["reviewer_history"]) - 1,
+    })
+
+
+@app.route("/episode/<episode_id>/row/<int:sr_no>/complete", methods=["POST"])
+def update_reviewer_complete(episode_id, sr_no):
+    complete = request.form.get("complete") == "true"
+    db.set_reviewer_complete(episode_id, sr_no, complete)
+    return jsonify({"ok": True, "complete": complete})
+
+
+@app.route("/episode/<episode_id>/row/<int:sr_no>/comments/<target>", methods=["POST"])
+def add_comment(episode_id, sr_no, target):
+    if target not in db.COMMENT_TARGETS:
+        abort(404)
+    text = request.form.get("text", "").strip()
+    if not text:
+        abort(400, "Comment text is required.")
+    author = request.form.get("author", "Reviewer").strip() or "Reviewer"
+    comment = db.add_comment(episode_id, sr_no, target, text, author)
+    return jsonify({"ok": True, "comment": _serialize_comment(comment)})
+
+
+@app.route("/episode/<episode_id>/row/<int:sr_no>/comments/<target>/<comment_id>/reply", methods=["POST"])
+def reply_comment(episode_id, sr_no, target, comment_id):
+    if target not in db.COMMENT_TARGETS:
+        abort(404)
+    text = request.form.get("text", "").strip()
+    if not text:
+        abort(400, "Reply text is required.")
+    author = request.form.get("author", "Reviewer").strip() or "Reviewer"
+    reply = db.add_comment_reply(episode_id, sr_no, target, comment_id, text, author)
+    return jsonify({"ok": True, "reply": _serialize_comment(reply)})
+
+
+@app.route("/episode/<episode_id>/row/<int:sr_no>/comments/<target>/<comment_id>/resolve", methods=["POST"])
+def resolve_comment(episode_id, sr_no, target, comment_id):
+    if target not in db.COMMENT_TARGETS:
+        abort(404)
+    resolved = request.form.get("resolved") == "true"
+    db.set_comment_resolved(episode_id, sr_no, target, comment_id, resolved)
+    return jsonify({"ok": True, "resolved": resolved})
+
+
+def _serialize_comment(comment: dict) -> dict:
+    return {**comment, "created_at": comment["created_at"].isoformat()}
+
+
 @app.route("/episode/<episode_id>/export/html")
 def export_html(episode_id):
     episode = db.get_episode(episode_id)
