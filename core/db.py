@@ -112,34 +112,67 @@ def row_audio_done(row: dict) -> bool:
     return row.get("audio_status") == "done"
 
 
-def progress_counts(episode: dict) -> dict:
+def _row_counts(episode_id: str) -> dict:
+    """Single aggregation pass over all rows, counting every stage at once
+    instead of fetching the full episode document into Python."""
+    pipeline = [
+        {"$match": {"_id": ObjectId(episode_id)}},
+        {"$project": {"rows": {"$reduce": {
+            "input": "$chapters", "initialValue": [],
+            "in": {"$concatArrays": ["$$value", "$$this.rows"]},
+        }}}},
+        {"$project": {
+            "total_rows": {"$size": "$rows"},
+            "reviewed_rows": {"$size": {"$filter": {"input": "$rows", "cond": {"$ne": ["$$this.review_comment", None]}}}},
+            "words_found_rows": {"$size": {"$filter": {"input": "$rows", "cond": {"$ne": ["$$this.difficult_words", None]}}}},
+            "audio_done_rows": {"$size": {"$filter": {"input": "$rows", "cond": {"$eq": ["$$this.audio_status", "done"]}}}},
+            "verified_rows": {"$size": {"$filter": {"input": "$rows", "cond": {"$eq": ["$$this.human_verified", True]}}}},
+        }},
+    ]
+    result = list(episodes_collection().aggregate(pipeline))
+    if not result:
+        return {"total_rows": 0, "reviewed_rows": 0, "words_found_rows": 0, "audio_done_rows": 0, "verified_rows": 0}
+    result[0].pop("_id", None)
+    return result[0]
+
+
+def progress_counts(episode_id: str, episode: dict | None = None) -> dict:
     """Per-stage completion counts, used to render a live progress breakdown."""
-    rows = [row for chapter in episode["chapters"] for row in chapter["rows"]]
-    total = len(rows)
-    return {
-        "total_rows": total,
-        "titles_translated": titles_translated(episode),
-        "reviewed_rows": sum(1 for r in rows if r.get("review_comment") is not None),
-        "words_found_rows": sum(1 for r in rows if r.get("difficult_words") is not None),
-        "audio_done_rows": sum(1 for r in rows if row_audio_done(r)),
-    }
+    counts = _row_counts(episode_id)
+    counts["titles_translated"] = titles_translated(episode) if episode is not None else None
+    return counts
 
 
-def verification_counts(episode: dict) -> tuple[int, int]:
+def verification_counts(episode_id: str) -> tuple[int, int]:
     """Return (verified_rows, total_rows) across all chapters."""
-    rows = [row for chapter in episode["chapters"] for row in chapter["rows"]]
-    verified = sum(1 for row in rows if row.get("human_verified"))
-    return verified, len(rows)
+    counts = _row_counts(episode_id)
+    return counts["verified_rows"], counts["total_rows"]
 
 
 def _row_filters(sr_no: int) -> list[dict]:
     return [{"r.sr_no": sr_no}, {"c.rows.sr_no": sr_no}]
 
 
+def get_row(episode_id: str, sr_no: int) -> dict:
+    """Fetch only the one row's fields (not the whole episode) via an aggregation projection."""
+    pipeline = [
+        {"$match": {"_id": ObjectId(episode_id)}},
+        {"$project": {"chapters": 1}},
+        {"$unwind": "$chapters"},
+        {"$unwind": "$chapters.rows"},
+        {"$match": {"chapters.rows.sr_no": sr_no}},
+        {"$replaceRoot": {"newRoot": "$chapters.rows"}},
+        {"$limit": 1},
+    ]
+    result = list(episodes_collection().aggregate(pipeline))
+    if not result:
+        raise ValueError(f"Row {sr_no} not found in episode {episode_id}")
+    return result[0]
+
+
 def set_reviewer_text(episode_id: str, sr_no: int, text: str) -> None:
     """Save a new reviewer edit, appending to history and truncating any redo tail."""
-    episode = get_episode(episode_id)
-    row = _find_row(episode, sr_no)
+    row = get_row(episode_id, sr_no)
     history = row.get("reviewer_history", [])
     index = row.get("reviewer_history_index", -1)
     history = history[:index + 1]
@@ -151,8 +184,7 @@ def set_reviewer_text(episode_id: str, sr_no: int, text: str) -> None:
 def move_reviewer_history(episode_id: str, sr_no: int, direction: str) -> str:
     """Move the undo/redo pointer one step; direction is 'undo' or 'redo'. Returns the
     resulting reviewer_text."""
-    episode = get_episode(episode_id)
-    row = _find_row(episode, sr_no)
+    row = get_row(episode_id, sr_no)
     history = row.get("reviewer_history", [])
     index = row.get("reviewer_history_index", -1)
     if direction == "undo" and index > 0:
@@ -162,14 +194,6 @@ def move_reviewer_history(episode_id: str, sr_no: int, direction: str) -> str:
     text = history[index]["text"] if history else row.get("translated", "")
     update_row(episode_id, sr_no, reviewer_text=text, reviewer_history_index=index)
     return text
-
-
-def _find_row(episode: dict, sr_no: int) -> dict:
-    for chapter in episode["chapters"]:
-        for row in chapter["rows"]:
-            if row["sr_no"] == sr_no:
-                return row
-    raise ValueError(f"Row {sr_no} not found in episode {episode['_id']}")
 
 
 def add_comment(episode_id: str, sr_no: int, target: str, text: str, author: str) -> dict:

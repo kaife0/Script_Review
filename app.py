@@ -90,7 +90,7 @@ def episode_view(episode_id):
         abort(404)
     if episode["status"] != "done":
         return render_template("progress.html", episode=episode)
-    verified, total = db.verification_counts(episode)
+    verified, total = db.verification_counts(episode_id)
     return render_template("episode.html", episode=episode, standalone=False,
                             verified_rows=verified, total_rows=total)
 
@@ -100,8 +100,8 @@ def episode_status(episode_id):
     episode = db.get_episode(episode_id)
     if episode is None:
         abort(404)
-    progress = db.progress_counts(episode)
-    verified, _ = db.verification_counts(episode)
+    progress = db.progress_counts(episode_id, episode)
+    verified = progress.pop("verified_rows")
     return jsonify({
         "status": episode["status"],
         "error_message": episode.get("error_message"),
@@ -138,9 +138,6 @@ def episode_audio(episode_id, filename):
 
 @app.route("/episode/<episode_id>/row/<int:sr_no>", methods=["POST"])
 def update_row(episode_id, sr_no):
-    episode = db.get_episode(episode_id)
-    if episode is None:
-        abort(404)
     fields = {}
     if "review_comment" in request.form:
         fields["review_comment"] = request.form["review_comment"]
@@ -154,17 +151,13 @@ def update_row(episode_id, sr_no):
     if fields:
         db.update_row(episode_id, sr_no, **fields)
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        updated = db.get_episode(episode_id)
-        verified, total = db.verification_counts(updated)
+        verified, total = db.verification_counts(episode_id)
         return jsonify({"ok": True, "verified_rows": verified, "total_rows": total})
     return redirect(url_for("episode_view", episode_id=episode_id))
 
 
 @app.route("/episode/<episode_id>/row/<int:sr_no>/reviewer-text", methods=["POST"])
 def update_reviewer_text(episode_id, sr_no):
-    episode = db.get_episode(episode_id)
-    if episode is None:
-        abort(404)
     db.set_reviewer_text(episode_id, sr_no, request.form.get("text", ""))
     return _reviewer_text_response(episode_id, sr_no)
 
@@ -182,8 +175,7 @@ def redo_reviewer_text(episode_id, sr_no):
 
 
 def _reviewer_text_response(episode_id, sr_no):
-    episode = db.get_episode(episode_id)
-    row = next(r for c in episode["chapters"] for r in c["rows"] if r["sr_no"] == sr_no)
+    row = db.get_row(episode_id, sr_no)
     return jsonify({
         "ok": True, "text": row["reviewer_text"],
         "can_undo": row["reviewer_history_index"] > 0,

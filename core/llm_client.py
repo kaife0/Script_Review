@@ -1,12 +1,8 @@
-"""Provider-agnostic LLM client. Swap providers via LLM_PROVIDER env var (anthropic | gemini)
+"""Provider-agnostic LLM client. Swap providers via LLM_PROVIDER env var
 with zero changes to callers — every caller only sees complete(system, user) -> str.
 """
 import os
-import time
-import requests
 from anthropic import Anthropic
-
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
 class LLMClient:
@@ -29,36 +25,7 @@ class AnthropicClient(LLMClient):
         return "".join(b.text for b in response.content if b.type == "text")
 
 
-class GeminiClient(LLMClient):
-    def __init__(self):
-        self._api_key = os.environ["GEMINI_API_KEY"]
-        self._model = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
-
-    def complete(self, system: str, user: str) -> str:
-        url = GEMINI_URL.format(model=self._model)
-        body = {
-            "system_instruction": {"parts": [{"text": system}]},
-            "contents": [{"role": "user", "parts": [{"text": user}]}],
-            "generationConfig": {"temperature": 0.4},
-        }
-
-        last_error = None
-        for attempt in range(3):
-            response = requests.post(url, params={"key": self._api_key}, json=body, timeout=60)
-            if response.status_code not in (429, 500, 502, 503, 504):
-                break
-            last_error = response
-            time.sleep(2 ** attempt * 5)
-        else:
-            last_error.raise_for_status()
-
-        response.raise_for_status()
-        data = response.json()
-        parts = data["candidates"][0]["content"]["parts"]
-        return "".join(p.get("text", "") for p in parts)
-
-
-_PROVIDERS = {"anthropic": AnthropicClient, "gemini": GeminiClient}
+_PROVIDERS = {"anthropic": AnthropicClient}
 _client_instance: LLMClient | None = None
 
 

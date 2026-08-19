@@ -9,25 +9,28 @@
   :root {
     --bg: #f4f5f7; --surface: #fff; --border: #e3e5e9; --text: #1c1f26; --text-muted: #6b7280;
     --primary: #4f46e5; --primary-dark: #4338ca; --primary-soft: #eef2ff;
-    --note-bg: #fffbeb; --note-border: #fcd34d;
-    --narrator-bg: #eff4ff; --narrator-border: #bfdbfe;
+    --note: #f59e0b; --note-bg: #fffbeb; --note-border: #fcd34d;
+    --narrator: #3b82f6; --narrator-bg: #eff6ff; --narrator-border: #bfdbfe;
+    --plain: #cbd5e1;
     --green: #16a34a; --green-bg: #dcfce7;
+    --pending: #f97316; --pending-bg: #fff7ed;
     --radius: 10px; --shadow: 0 1px 2px rgba(16,24,40,0.06), 0 1px 3px rgba(16,24,40,0.06);
   }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Segoe UI", Inter, Arial, sans-serif; margin: 0;
     background: var(--bg); color: var(--text); line-height: 1.5; -webkit-font-smoothing: antialiased; }
-  .page { max-width: 1320px; margin: 0 auto; padding: 2rem 2rem 4rem; }
+  .page { max-width: 1400px; margin: 0 auto; padding: 2rem 2rem 4rem; }
   a { color: var(--primary); }
   h1 { margin: 0 0 0.2rem; font-size: 1.6rem; font-weight: 700; letter-spacing: -0.01em; }
   .meta { color: var(--text-muted); margin: 0 0 1.25rem; font-size: 0.92rem; }
   button { font-family: inherit; }
 
   .topbar { position: sticky; top: 0; z-index: 30; background: rgba(244,245,247,0.94);
-    backdrop-filter: blur(6px); margin: 0 -2rem; padding: 1.25rem 2rem 1rem; border-bottom: 1px solid var(--border); }
-  .back-link { display: inline-flex; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.6rem; font-weight: 500; text-decoration: none; }
+    backdrop-filter: blur(6px); margin: 0 -2rem; padding: 1rem 2rem 0.85rem; border-bottom: 1px solid var(--border); }
+  .topbar-main { display: flex; align-items: flex-end; justify-content: space-between; gap: 1.5rem; flex-wrap: wrap; }
+  .back-link { display: inline-flex; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.5rem; font-weight: 500; text-decoration: none; }
   .back-link:hover { color: var(--primary); }
-  .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.9rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .btn { display: inline-flex; align-items: center; gap: 0.4rem; background: var(--primary); color: #fff;
     padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; border: none; cursor: pointer;
     font-size: 0.85rem; font-weight: 600; transition: background 0.12s ease; box-shadow: 0 1px 2px rgba(79,70,229,0.25); }
@@ -35,94 +38,123 @@
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
   .btn-secondary:hover { background: #f9fafb; }
-  .btn-sm { padding: 0.3rem 0.7rem; font-size: 0.76rem; }
-  .btn-icon { padding: 0.3rem 0.5rem; }
+  .btn-sm { padding: 0.32rem 0.7rem; font-size: 0.76rem; }
 
   .warning { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; padding: 0.85rem 1.1rem;
     border-radius: var(--radius); margin: 1.25rem 0; font-size: 0.9rem; }
   .warning ul { margin: 0.4rem 0 0 1.1rem; padding: 0; }
 
-  .verify-progress { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-    box-shadow: var(--shadow); padding: 1rem 1.25rem; margin: 1.25rem 0; }
-  .verify-progress-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 0.6rem; }
-  .verify-progress-head .label { font-weight: 600; font-size: 0.9rem; }
-  .verify-progress-head .pct { font-weight: 700; font-size: 1.1rem; color: var(--primary); }
-  .verify-track { background: #eef0f3; border-radius: 999px; height: 10px; overflow: hidden; }
+  /* ---- Sticky control bar: progress + legend + filters ---- */
+  .controlbar { position: sticky; z-index: 25; background: var(--bg); padding: 0.8rem 0 0.7rem;
+    border-bottom: 1px solid var(--border); }
+  .control-row { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
+  .verify-progress { flex: 1; min-width: 260px; }
+  .verify-progress-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 0.35rem; }
+  .verify-progress-head .label { font-weight: 600; font-size: 0.82rem; }
+  .verify-progress-head .pct { font-weight: 700; font-size: 1rem; color: var(--green); }
+  .verify-track { background: #e5e7eb; border-radius: 999px; height: 8px; overflow: hidden; }
   .verify-fill { background: linear-gradient(90deg, #22c55e, #16a34a); height: 100%; border-radius: 999px;
     transition: width 0.35s ease; width: 0%; }
-  .verify-count { color: var(--text-muted); font-size: 0.8rem; margin-top: 0.4rem; }
+  .verify-count { color: var(--text-muted); font-size: 0.76rem; margin-top: 0.3rem; }
 
-  .legend { position: sticky; z-index: 25; background: var(--bg); display: flex; flex-wrap: wrap;
-    gap: 1.1rem; padding: 0.75rem 0; font-size: 0.85rem; color: var(--text-muted); border-bottom: 1px solid var(--border); }
-  .legend span.item { display: flex; align-items: center; gap: 0.4rem; }
-  .swatch { display: inline-block; width: 13px; height: 13px; border-radius: 4px; border: 1px solid var(--border); }
+  .filters { display: flex; gap: 0.35rem; align-items: center; }
+  .filter-btn { background: var(--surface); border: 1px solid var(--border); color: var(--text-muted);
+    padding: 0.32rem 0.7rem; border-radius: 999px; font-size: 0.76rem; font-weight: 600; cursor: pointer; }
+  .filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .filter-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 0.9rem; font-size: 0.78rem; color: var(--text-muted);
+    margin-top: 0.65rem; align-items: center; }
+  .legend .item { display: flex; align-items: center; gap: 0.35rem; }
+  .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px; }
+  .legend .sep { width: 1px; height: 14px; background: var(--border); }
+  .legend .hint { font-style: italic; }
 
   .episode-title-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
     box-shadow: var(--shadow); padding: 1.1rem 1.25rem; margin: 1.25rem 0; display: flex;
     flex-wrap: wrap; gap: 1.5rem; align-items: center; }
   .title-pair { flex: 1; min-width: 220px; }
-  .title-pair .en { font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.15rem; }
+  .title-pair .en { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.15rem; }
   .title-pair .tr { font-size: 1.1rem; font-weight: 700; }
-  .title-pair .orig { font-size: 0.85rem; color: var(--text-muted); font-weight: 400; }
+  .title-pair .orig { font-size: 0.95rem; }
 
   .chapter { margin-bottom: 2.5rem; }
-  .chapter-head { position: sticky; top: 133px; z-index: 15; background: var(--bg); padding: 0.7rem 0; }
-  .chapter-head-row { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; }
-  .chapter-head h2 { margin: 0; font-size: 1.05rem; font-weight: 700; }
-  .chapter-head .translated-title { font-size: 0.95rem; color: var(--text-muted); font-weight: 600; }
-  .chapter-head .count { font-weight: 500; color: var(--text-muted); font-size: 0.82rem; }
-  .chapter-head audio { height: 28px; width: 190px; }
+  .chapter-head { position: sticky; z-index: 15; background: var(--bg); padding: 0.7rem 0 0.6rem; }
+  .chapter-head-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+    background: #1e3a5f; color: #fff; padding: 0.65rem 1rem; border-radius: 8px; }
+  .chapter-head h2 { margin: 0; font-size: 1rem; font-weight: 700; }
+  .chapter-head .translated-title { font-size: 0.9rem; opacity: 0.85; font-weight: 500; }
+  .chapter-head .count { font-size: 0.78rem; opacity: 0.7; margin-left: auto; }
 
-  .rows { display: flex; flex-direction: column; gap: 1rem; }
+  .rows { display: flex; flex-direction: column; gap: 0.9rem; }
+
+  /* content-visibility keeps offscreen rows out of layout/paint — big scroll win */
   .row-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-    box-shadow: var(--shadow); overflow: hidden; }
-  .row-card.flag-note { border-color: var(--note-border); }
-  .row-card.flag-narrator { border-color: var(--narrator-border); }
-  .row-card.row-verified { opacity: 0.75; }
+    box-shadow: var(--shadow); overflow: hidden; border-left: 5px solid var(--plain);
+    content-visibility: auto; contain-intrinsic-size: auto 260px; }
+  .row-card.flag-note { border-left-color: var(--note); }
+  .row-card.flag-narrator { border-left-color: var(--narrator); }
+  .row-card.is-verified { border-left-color: var(--green); }
+  .row-card.is-verified .row-head { background: var(--green-bg); }
+  .row-card[hidden] { display: none; }
 
   .row-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-    padding: 0.6rem 1rem; background: #fafafa; border-bottom: 1px solid var(--border); }
-  .row-head-left { display: flex; align-items: center; gap: 0.6rem; }
-  .row-sr { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 0.82rem; }
+    padding: 0.55rem 1rem; background: #fafafa; border-bottom: 1px solid var(--border); }
+  .row-card.flag-note .row-head { background: var(--note-bg); }
+  .row-card.flag-narrator .row-head { background: var(--narrator-bg); }
+  .row-head-left { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+  .row-sr { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 0.8rem; font-weight: 600; }
   .row-speaker { font-weight: 700; font-size: 0.88rem; }
-  .row-flag-badge { font-size: 0.7rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px; text-transform: uppercase; }
-  .row-flag-badge.ok { background: var(--green-bg); color: #15803d; }
-  .row-flag-badge.note { background: var(--note-bg); color: #92400e; border: 1px solid var(--note-border); }
+  .pill { font-size: 0.67rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: 0.03em; }
+  .pill.note { background: #fef3c7; color: #92400e; border: 1px solid var(--note-border); }
+  .pill.narrator { background: #dbeafe; color: #1e40af; border: 1px solid var(--narrator-border); }
+  .pill.pending { background: var(--pending-bg); color: #c2410c; border: 1px solid #fdba74; }
+  .pill.verified { background: var(--green-bg); color: #15803d; border: 1px solid #86efac; }
 
-  .boxes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; }
-  .box { padding: 0.9rem 1rem; border-right: 1px solid var(--border); min-width: 0; }
+  .boxes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+  .box { padding: 0.85rem 1rem; border-right: 1px solid var(--border); min-width: 0; }
   .box:last-child { border-right: none; }
-  .box-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-    color: var(--text-muted); margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: space-between; }
-  .box-text { font-size: 0.9rem; white-space: pre-wrap; min-height: 2.4rem; }
-  .box-locked .box-text { color: var(--text); }
+  .box-label { font-size: 0.67rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--text-muted); margin-bottom: 0.45rem; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+  .box-text { font-size: 0.9rem; white-space: pre-wrap; }
+  .box-text.italian { font-weight: 600; color: #1e3a5f; }
 
-  .reviewer-textarea { width: 100%; min-height: 4.5rem; font-family: inherit; font-size: 0.9rem;
+  .reviewer-textarea { width: 100%; min-height: 5.5rem; font-family: inherit; font-size: 0.9rem;
     padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; resize: vertical; background: #fff; }
   .reviewer-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
-  .reviewer-controls { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.5rem; flex-wrap: wrap; }
-  .complete-toggle { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.3rem 0.65rem;
-    border-radius: 999px; border: 1px solid var(--border); background: #fff; cursor: pointer;
-    font-size: 0.74rem; font-weight: 600; color: var(--text-muted); }
-  .complete-toggle.done { background: var(--green-bg); border-color: var(--green); color: #15803d; }
+  .reviewer-controls { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.45rem; flex-wrap: wrap; }
+  .complete-toggle { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.28rem 0.6rem;
+    border-radius: 6px; border: 1px dashed var(--border); background: #fff; cursor: pointer;
+    font-size: 0.72rem; font-weight: 600; color: var(--text-muted); }
+  .complete-toggle.done { background: #f0fdf4; border-style: solid; border-color: var(--green); color: #15803d; }
+  .save-state { font-size: 0.7rem; color: var(--text-muted); margin-left: auto; }
 
-  audio { width: 100%; height: 34px; }
+  /* ---- Audio strip, full width under the row ---- */
+  .audio-strip { display: flex; align-items: center; gap: 0.9rem; padding: 0.7rem 1rem;
+    border-top: 1px solid var(--border); background: #fcfcfd; flex-wrap: wrap; }
+  .audio-strip .strip-label { font-size: 0.67rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--text-muted); white-space: nowrap; }
+  .audio-strip audio { flex: 1; min-width: 260px; max-width: 560px; height: 34px; }
   .no-audio { color: var(--text-muted); font-size: 0.82rem; font-style: italic; }
+  .audio-comment-wrap { flex: 1; min-width: 220px; }
 
-  .difficult-words { padding: 0.9rem 1rem; border-top: 1px solid var(--border); background: #fcfcfd; }
-  .difficult-words-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-    color: var(--text-muted); margin-bottom: 0.6rem; }
-  .word-group { display: inline-flex; flex-direction: column; margin-right: 1.5rem; margin-bottom: 0.6rem; vertical-align: top; }
-  .word-group .word { font-weight: 700; font-size: 0.85rem; margin-bottom: 0.3rem; }
-  .suggestion-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .difficult-words { margin-top: 0.7rem; padding-top: 0.6rem; border-top: 1px dashed var(--border); }
+  .difficult-words-label { font-size: 0.67rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--text-muted); margin-bottom: 0.5rem; }
+  .word-group { margin-bottom: 0.6rem; }
+  .word-group .word { font-weight: 700; font-size: 0.84rem; display: block; margin-bottom: 0.25rem; }
+  .suggestion-list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
   .suggestion-chip { background: var(--primary-soft); color: var(--primary-dark); border-radius: 6px;
-    padding: 0.25rem 0.55rem; font-size: 0.78rem; }
+    padding: 0.22rem 0.5rem; font-size: 0.76rem; }
   .suggestion-chip .meaning { color: var(--text-muted); font-weight: 400; }
+  .dw-empty { color: var(--text-muted); font-size: 0.82rem; font-style: italic; }
 
-  .comment-toggle { background: none; border: none; cursor: pointer; color: var(--text-muted);
-    font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.35rem; border-radius: 5px; display: inline-flex; align-items: center; gap: 0.25rem; }
-  .comment-toggle:hover { color: var(--primary); background: var(--primary-soft); }
-  .comment-toggle .count { background: var(--primary); color: #fff; border-radius: 999px; padding: 0 0.4rem; font-size: 0.68rem; }
+  .comment-toggle { background: var(--primary-soft); border: 1px solid #c7d2fe; cursor: pointer;
+    color: var(--primary-dark); font-size: 0.72rem; font-weight: 700; padding: 0.2rem 0.5rem;
+    border-radius: 6px; display: inline-flex; align-items: center; gap: 0.3rem; }
+  .comment-toggle:hover { background: #e0e7ff; border-color: var(--primary); }
+  .comment-toggle .count { background: var(--primary); color: #fff; border-radius: 999px; padding: 0 0.35rem; font-size: 0.68rem; }
   .comment-toggle .count.zero { display: none; }
 
   .comment-panel { display: none; border-top: 1px dashed var(--border); margin-top: 0.6rem; padding-top: 0.6rem; }
@@ -131,20 +163,22 @@
   .comment-thread.resolved { opacity: 0.55; background: #f9fafb; }
   .comment-item { font-size: 0.82rem; margin-bottom: 0.3rem; }
   .comment-item .author { font-weight: 700; }
-  .comment-item .when { color: var(--text-muted); font-size: 0.72rem; margin-left: 0.3rem; }
   .comment-replies { margin: 0.35rem 0 0.35rem 0.9rem; padding-left: 0.6rem; border-left: 2px solid var(--border); }
   .comment-thread-actions { display: flex; gap: 0.5rem; margin-top: 0.35rem; }
   .comment-thread-actions button { background: none; border: none; color: var(--primary); cursor: pointer;
     font-size: 0.74rem; font-weight: 600; padding: 0; }
   .comment-new-form { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
-  .comment-new-form input { flex: 1; font-size: 0.82rem; padding: 0.35rem 0.5rem; border: 1px solid var(--border);
-    border-radius: 6px; font-family: inherit; }
-  .comment-new-form input:focus { outline: none; border-color: var(--primary); }
+  .comment-new-form input { flex: 1; font-size: 0.82rem; padding: 0.4rem 0.55rem; border: 1px solid #cbd5e1;
+    border-radius: 6px; font-family: inherit; background: #fff; }
+  .comment-new-form input::placeholder { color: #94a3b8; }
+  .comment-new-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+  .comment-new-form button { background: var(--primary); color: #fff; border: none; border-radius: 6px;
+    padding: 0.35rem 0.7rem; font-size: 0.76rem; font-weight: 600; cursor: pointer; }
 
-  @media (max-width: 1100px) {
-    .boxes { grid-template-columns: repeat(2, 1fr); }
-    .box { border-bottom: 1px solid var(--border); }
-    .box:nth-child(2n) { border-right: none; }
+  @media (max-width: 1150px) {
+    .boxes { grid-template-columns: 1fr; }
+    .box { border-right: none; border-bottom: 1px solid var(--border); }
+    .box:last-child { border-bottom: none; }
   }
 </style>
 </head>
@@ -154,11 +188,16 @@
   {% if not standalone %}
   <div class="topbar">
     <a class="back-link" href="{{ url_for('lang_dashboard', lang_code=episode.target_lang) }}">&larr; {{ episode.target_lang_name }} episodes</a>
-    <h1>{{ episode.title }}</h1>
-    <p class="meta" style="margin-bottom:0;">Target language: {{ episode.target_lang_name }}</p>
-    <div class="actions">
-      <a class="btn" href="{{ url_for('export_html', episode_id=episode._id) }}">Export standalone HTML</a>
-      <a class="btn btn-secondary" href="{{ url_for('export_xlsx', episode_id=episode._id) }}">Export Excel</a>
+    <div class="topbar-main">
+      <div>
+        <h1>{{ episode.title }}</h1>
+        <p class="meta" style="margin-bottom:0;">Target language: {{ episode.target_lang_name }}</p>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn" id="jump-next">Jump to next unreviewed &darr;</button>
+        <a class="btn btn-secondary" href="{{ url_for('export_html', episode_id=episode._id) }}">Export HTML</a>
+        <a class="btn btn-secondary" href="{{ url_for('export_xlsx', episode_id=episode._id) }}">Export Excel</a>
+      </div>
     </div>
   </div>
   {% else %}
@@ -174,13 +213,30 @@
   {% endif %}
 
   {% if not standalone %}
-  <div class="verify-progress">
-    <div class="verify-progress-head">
-      <span class="label">Review progress</span>
-      <span class="pct" id="verify-pct">0%</span>
+  <div class="controlbar" id="controlbar">
+    <div class="control-row">
+      <div class="verify-progress">
+        <div class="verify-progress-head">
+          <span class="label">Review progress</span>
+          <span class="pct" id="verify-pct">0%</span>
+        </div>
+        <div class="verify-track"><div class="verify-fill" id="verify-fill"></div></div>
+        <div class="verify-count" id="verify-count">0 / 0 lines verified</div>
+      </div>
+      <div class="filters">
+        <button type="button" class="filter-btn active" data-filter="all">All</button>
+        <button type="button" class="filter-btn" data-filter="unverified">Needs review</button>
+        <button type="button" class="filter-btn" data-filter="note">Flagged</button>
+      </div>
     </div>
-    <div class="verify-track"><div class="verify-fill" id="verify-fill"></div></div>
-    <div class="verify-count" id="verify-count">0 / 0 lines marked done</div>
+    <div class="legend">
+      <span class="item"><span class="swatch" style="background:var(--plain)"></span>Straightforward</span>
+      <span class="item"><span class="swatch" style="background:var(--note)"></span>Flagged (note)</span>
+      <span class="item"><span class="swatch" style="background:var(--narrator)"></span>Narrator line</span>
+      <span class="item"><span class="swatch" style="background:var(--green)"></span>Verified</span>
+      <span class="sep"></span>
+      <span class="item hint"><strong>Complete</strong>&nbsp;= text edit finished &nbsp;·&nbsp; <strong>Verified</strong>&nbsp;= whole line signed off</span>
+    </div>
   </div>
   {% endif %}
 
@@ -195,48 +251,54 @@
     </div>
     {% if episode.title_audio_path %}
       {% if standalone %}
-        <audio controls style="width:220px" src="audio/{{ episode.title_audio_path }}"></audio>
+        <audio controls preload="none" style="width:240px" src="audio/{{ episode.title_audio_path }}"></audio>
       {% else %}
-        <audio controls style="width:220px" src="{{ url_for('episode_audio', episode_id=episode._id, filename=episode.title_audio_path) }}"></audio>
+        <audio controls preload="none" style="width:240px" src="{{ url_for('episode_audio', episode_id=episode._id, filename=episode.title_audio_path) }}"></audio>
       {% endif %}
     {% endif %}
   </div>
 
-  <div class="legend" style="top: {{ '92px' if not standalone else '0' }};">
-    <span class="item"><span class="swatch" style="background:#fff"></span>Straightforward</span>
-    <span class="item"><span class="swatch" style="background:var(--note-bg);border-color:var(--note-border)"></span>Flagged (note)</span>
-    <span class="item"><span class="swatch" style="background:var(--narrator-bg);border-color:var(--narrator-border)"></span>Narrator line</span>
-  </div>
-
   {% for chapter in episode.chapters %}
   <section class="chapter">
-    <div class="chapter-head" style="top: {{ '133px' if not standalone else '41px' }};">
+    <div class="chapter-head">
       <div class="chapter-head-row">
         <h2>Chapter {{ chapter.chapter_number }}: {{ chapter.title }}</h2>
         <span class="translated-title">— {{ chapter.translated_title or chapter.title }}</span>
-        <span class="count">({{ chapter.rows | length }} lines)</span>
-        {% if chapter.title_audio_path %}
-          {% if standalone %}
-            <audio controls src="audio/{{ chapter.title_audio_path }}"></audio>
-          {% else %}
-            <audio controls src="{{ url_for('episode_audio', episode_id=episode._id, filename=chapter.title_audio_path) }}"></audio>
-          {% endif %}
+        <span class="count">{{ chapter.rows | length }} lines</span>
+      </div>
+      {% if chapter.title_audio_path %}
+      <div class="audio-strip" style="border-top:none; background:transparent; padding-left:0;">
+        <span class="strip-label">Chapter title audio</span>
+        {% if standalone %}
+          <audio controls preload="none" src="audio/{{ chapter.title_audio_path }}"></audio>
+        {% else %}
+          <audio controls preload="none" src="{{ url_for('episode_audio', episode_id=episode._id, filename=chapter.title_audio_path) }}"></audio>
         {% endif %}
       </div>
+      {% endif %}
     </div>
 
     <div class="rows">
       {% for row in chapter.rows %}
-      <article class="row-card {{ row | row_class }}{% if row.human_verified %} row-verified{% endif %}" data-row="{{ row.sr_no }}">
+      <article class="row-card {{ row | row_class }}{% if row.human_verified %} is-verified{% endif %}"
+               data-row="{{ row.sr_no }}"
+               data-verified="{{ 'true' if row.human_verified else 'false' }}"
+               data-flag="{{ row.review_flag or 'ok' }}">
         <div class="row-head">
           <div class="row-head-left">
             <span class="row-sr">#{{ row.sr_no }}</span>
             <span class="row-speaker">{{ row.speaker }}</span>
-            {% if row.review_flag %}<span class="row-flag-badge {{ row.review_flag }}">{{ row.review_flag }}</span>{% endif %}
+            {% if row.review_flag == 'note' %}<span class="pill note">note</span>{% endif %}
+            {% if row.speaker.lower() == 'narrator' %}<span class="pill narrator">narrator</span>{% endif %}
+            {% if not standalone %}
+            <span class="pill status-pill {{ 'verified' if row.human_verified else 'pending' }}">
+              {{ 'Verified' if row.human_verified else 'Needs review' }}
+            </span>
+            {% endif %}
           </div>
           {% if not standalone %}
           <button type="button" class="verify-toggle btn btn-sm {{ 'btn-secondary' if not row.human_verified }}"
-                  data-episode="{{ episode._id }}" data-sr-no="{{ row.sr_no }}"
+                  data-sr-no="{{ row.sr_no }}"
                   data-verified="{{ 'true' if row.human_verified else 'false' }}">
             {% if row.human_verified %}&#10003; Verified{% else %}Mark verified{% endif %}
           </button>
@@ -244,7 +306,7 @@
         </div>
 
         <div class="boxes">
-          <div class="box box-locked">
+          <div class="box">
             <div class="box-label">
               English
               {% if not standalone %}{{ comments.comment_toggle('english', row) }}{% endif %}
@@ -253,12 +315,12 @@
             {% if not standalone %}{{ comments.comment_panel('english', row, episode._id) }}{% endif %}
           </div>
 
-          <div class="box box-locked">
+          <div class="box">
             <div class="box-label">
               AI Translated
               {% if not standalone %}{{ comments.comment_toggle('ai_translation', row) }}{% endif %}
             </div>
-            <div class="box-text">{{ row.translated }}</div>
+            <div class="box-text italian">{{ row.translated }}</div>
             {% if not standalone %}{{ comments.comment_panel('ai_translation', row, episode._id) }}{% endif %}
           </div>
 
@@ -268,58 +330,63 @@
               {% if not standalone %}{{ comments.comment_toggle('reviewer_edit', row) }}{% endif %}
             </div>
             {% if standalone %}
-              <div class="box-text">{{ row.reviewer_text }}</div>
+              <div class="box-text italian">{{ row.reviewer_text }}</div>
             {% else %}
-              <textarea class="reviewer-textarea" data-episode="{{ episode._id }}" data-sr-no="{{ row.sr_no }}"
-                        data-role="reviewer-text">{{ row.reviewer_text }}</textarea>
+              <textarea class="reviewer-textarea" data-sr-no="{{ row.sr_no }}" data-role="reviewer-text">{{ row.reviewer_text }}</textarea>
               <div class="reviewer-controls">
-                <button type="button" class="btn btn-secondary btn-sm btn-icon" data-action="undo"
-                        data-episode="{{ episode._id }}" data-sr-no="{{ row.sr_no }}" title="Undo">&#8630; Undo</button>
-                <button type="button" class="btn btn-secondary btn-sm btn-icon" data-action="redo"
-                        data-episode="{{ episode._id }}" data-sr-no="{{ row.sr_no }}" title="Redo">&#8631; Redo</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-action="undo" data-sr-no="{{ row.sr_no }}">&#8630; Undo</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-action="redo" data-sr-no="{{ row.sr_no }}">&#8631; Redo</button>
                 <button type="button" class="complete-toggle {{ 'done' if row.reviewer_complete }}"
-                        data-episode="{{ episode._id }}" data-sr-no="{{ row.sr_no }}"
+                        data-sr-no="{{ row.sr_no }}"
                         data-complete="{{ 'true' if row.reviewer_complete else 'false' }}">
                   {% if row.reviewer_complete %}&#10003; Complete{% else %}Mark complete{% endif %}
                 </button>
+                <span class="save-state" data-save-state="{{ row.sr_no }}"></span>
               </div>
               {{ comments.comment_panel('reviewer_edit', row, episode._id) }}
             {% endif %}
-          </div>
 
-          <div class="box">
-            <div class="box-label">
-              Audio
-              {% if not standalone %}{{ comments.comment_toggle('audio', row) }}{% endif %}
-            </div>
-            {% if row.audio_path %}
-              {% if standalone %}
-                <audio controls src="audio/{{ row.audio_path }}"></audio>
+            <div class="difficult-words">
+              <div class="difficult-words-label">Difficult words</div>
+              {% if row.difficult_words %}
+                {% for w in row.difficult_words %}
+                <div class="word-group">
+                  <span class="word">{{ w.word }}</span>
+                  <div class="suggestion-list">
+                    {% for s in w.suggestions %}
+                    <span class="suggestion-chip">{{ s.text }} <span class="meaning">— {{ s.meaning }}</span></span>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endfor %}
               {% else %}
-                <audio controls src="{{ url_for('episode_audio', episode_id=episode._id, filename=row.audio_path) }}"></audio>
+                <span class="dw-empty">None flagged for this line.</span>
               {% endif %}
-            {% else %}
-              <span class="no-audio">no audio</span>
-            {% endif %}
-            {% if not standalone %}{{ comments.comment_panel('audio', row, episode._id) }}{% endif %}
+            </div>
           </div>
         </div>
 
-        {% if row.difficult_words %}
-        <div class="difficult-words">
-          <div class="difficult-words-label">Difficult words</div>
-          {% for w in row.difficult_words %}
-          <div class="word-group">
-            <span class="word">{{ w.word }}</span>
-            <div class="suggestion-list">
-              {% for s in w.suggestions %}
-              <span class="suggestion-chip">{{ s.text }} <span class="meaning">— {{ s.meaning }}</span></span>
-              {% endfor %}
+        <div class="audio-strip">
+          <span class="strip-label">{{ episode.target_lang_name }} audio</span>
+          {% if row.audio_path %}
+            {% if standalone %}
+              <audio controls preload="none" src="audio/{{ row.audio_path }}"></audio>
+            {% else %}
+              <audio controls preload="none" src="{{ url_for('episode_audio', episode_id=episode._id, filename=row.audio_path) }}"></audio>
+            {% endif %}
+          {% else %}
+            <span class="no-audio">no audio</span>
+          {% endif %}
+          {% if not standalone %}
+          <div class="audio-comment-wrap">
+            <div class="box-label" style="margin-bottom:0.3rem;">
+              Audio notes
+              {{ comments.comment_toggle('audio', row) }}
             </div>
+            {{ comments.comment_panel('audio', row, episode._id) }}
           </div>
-          {% endfor %}
+          {% endif %}
         </div>
-        {% endif %}
       </article>
       {% endfor %}
     </div>
@@ -330,101 +397,92 @@
   <script>
     const episodeId = {{ episode._id | tojson }};
 
-    function updateVerifyBar(verified, total) {
-      const pct = total ? Math.round((verified / total) * 100) : 0;
-      document.getElementById("verify-pct").textContent = pct + "%";
-      document.getElementById("verify-fill").style.width = pct + "%";
-      document.getElementById("verify-count").textContent = `${verified} / ${total} lines marked done`;
-    }
-
     function post(url, data) {
       const body = new FormData();
-      for (const [key, value] of Object.entries(data)) body.set(key, value);
+      for (const [key, value] of Object.entries(data || {})) body.set(key, value);
       return fetch(url, { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" }, body })
         .then(r => r.json());
     }
 
-    document.querySelectorAll(".verify-toggle").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const sr = btn.dataset.srNo;
-        const next = btn.dataset.verified !== "true";
-        post(`/episode/${episodeId}/row/${sr}`, { human_verified: next }).then(data => {
-          if (!data.ok) return;
-          btn.dataset.verified = String(next);
-          btn.textContent = next ? "✓ Verified" : "Mark verified";
-          btn.classList.toggle("btn-secondary", !next);
-          btn.closest(".row-card").classList.toggle("row-verified", next);
-          updateVerifyBar(data.verified_rows, data.total_rows);
-        });
-      });
-    });
-
-    let saveTimers = {};
-    document.querySelectorAll('[data-role="reviewer-text"]').forEach(textarea => {
-      textarea.addEventListener("input", () => {
-        const sr = textarea.dataset.srNo;
-        clearTimeout(saveTimers[sr]);
-        saveTimers[sr] = setTimeout(() => {
-          post(`/episode/${episodeId}/row/${sr}/reviewer-text`, { text: textarea.value });
-        }, 800);
-      });
-    });
-
-    document.querySelectorAll('[data-action="undo"], [data-action="redo"]').forEach(btn => {
-      btn.addEventListener("click", () => {
-        const sr = btn.dataset.srNo;
-        const action = btn.dataset.action;
-        post(`/episode/${episodeId}/row/${sr}/reviewer-text/${action}`).then(data => {
-          if (!data.ok) return;
-          const textarea = document.querySelector(`[data-role="reviewer-text"][data-sr-no="${sr}"]`);
-          textarea.value = data.text;
-        });
-      });
-    });
-
-    document.querySelectorAll(".complete-toggle").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const sr = btn.dataset.srNo;
-        const next = btn.dataset.complete !== "true";
-        post(`/episode/${episodeId}/row/${sr}/complete`, { complete: next }).then(data => {
-          if (!data.ok) return;
-          btn.dataset.complete = String(next);
-          btn.classList.toggle("done", next);
-          btn.textContent = next ? "✓ Complete" : "Mark complete";
-        });
-      });
-    });
-
-    document.querySelectorAll(".comment-toggle").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const panel = btn.closest(".box").querySelector(".comment-panel");
-        panel.classList.toggle("open");
-      });
-    });
-
-    function renderThread(sr, target, comment) {
-      const wrap = document.createElement("div");
-      wrap.className = "comment-thread";
-      wrap.dataset.commentId = comment.id;
-      wrap.innerHTML = commentThreadHTML(sr, target, comment);
-      return wrap;
+    function updateVerifyBar(verified, total) {
+      const pct = total ? Math.round((verified / total) * 100) : 0;
+      document.getElementById("verify-pct").textContent = pct + "%";
+      document.getElementById("verify-fill").style.width = pct + "%";
+      document.getElementById("verify-count").textContent = `${verified} / ${total} lines verified`;
     }
 
-    function commentThreadHTML(sr, target, c) {
-      const replies = (c.replies || []).map(r =>
-        `<div class="comment-item"><span class="author">${escapeHtml(r.author)}</span>: ${escapeHtml(r.text)}</div>`
-      ).join("");
-      return `
-        <div class="comment-item"><span class="author">${escapeHtml(c.author)}</span>: ${escapeHtml(c.text)}</div>
-        <div class="comment-replies">${replies}</div>
-        <div class="comment-thread-actions">
-          <button data-act="reply">Reply</button>
-          <button data-act="resolve">${c.resolved ? "Reopen" : "Resolve"}</button>
-        </div>
-        <form class="comment-new-form" data-act="reply-form" style="display:none">
-          <input type="text" placeholder="Write a reply…" required>
-        </form>`;
-    }
+    // ---- verify toggle ----
+    document.addEventListener("click", e => {
+      const btn = e.target.closest(".verify-toggle");
+      if (!btn) return;
+      const sr = btn.dataset.srNo;
+      const next = btn.dataset.verified !== "true";
+      post(`/episode/${episodeId}/row/${sr}`, { human_verified: next }).then(data => {
+        if (!data.ok) return;
+        const card = btn.closest(".row-card");
+        btn.dataset.verified = String(next);
+        card.dataset.verified = String(next);
+        btn.textContent = next ? "✓ Verified" : "Mark verified";
+        btn.classList.toggle("btn-secondary", !next);
+        card.classList.toggle("is-verified", next);
+        const pill = card.querySelector(".status-pill");
+        pill.textContent = next ? "Verified" : "Needs review";
+        pill.classList.toggle("verified", next);
+        pill.classList.toggle("pending", !next);
+        updateVerifyBar(data.verified_rows, data.total_rows);
+        applyFilter();
+      });
+    });
+
+    // ---- reviewer text autosave ----
+    const saveTimers = {};
+    document.addEventListener("input", e => {
+      const textarea = e.target.closest('[data-role="reviewer-text"]');
+      if (!textarea) return;
+      const sr = textarea.dataset.srNo;
+      const state = document.querySelector(`[data-save-state="${sr}"]`);
+      state.textContent = "Saving…";
+      clearTimeout(saveTimers[sr]);
+      saveTimers[sr] = setTimeout(() => {
+        post(`/episode/${episodeId}/row/${sr}/reviewer-text`, { text: textarea.value })
+          .then(() => {
+            state.textContent = "Saved";
+            setTimeout(() => { state.textContent = ""; }, 1500);
+          });
+      }, 700);
+    });
+
+    // ---- undo / redo / complete ----
+    document.addEventListener("click", e => {
+      const btn = e.target.closest('[data-action="undo"], [data-action="redo"]');
+      if (!btn) return;
+      const sr = btn.dataset.srNo;
+      post(`/episode/${episodeId}/row/${sr}/reviewer-text/${btn.dataset.action}`).then(data => {
+        if (!data.ok) return;
+        document.querySelector(`[data-role="reviewer-text"][data-sr-no="${sr}"]`).value = data.text;
+      });
+    });
+
+    document.addEventListener("click", e => {
+      const btn = e.target.closest(".complete-toggle");
+      if (!btn) return;
+      const sr = btn.dataset.srNo;
+      const next = btn.dataset.complete !== "true";
+      post(`/episode/${episodeId}/row/${sr}/complete`, { complete: next }).then(data => {
+        if (!data.ok) return;
+        btn.dataset.complete = String(next);
+        btn.classList.toggle("done", next);
+        btn.textContent = next ? "✓ Complete" : "Mark complete";
+      });
+    });
+
+    // ---- comment panels ----
+    document.addEventListener("click", e => {
+      const btn = e.target.closest(".comment-toggle");
+      if (!btn) return;
+      const container = btn.closest(".box") || btn.closest(".audio-comment-wrap");
+      container.querySelector(".comment-panel").classList.toggle("open");
+    });
 
     function escapeHtml(s) {
       const div = document.createElement("div");
@@ -432,65 +490,130 @@
       return div.innerHTML;
     }
 
-    document.querySelectorAll(".comment-panel").forEach(panel => {
-      const sr = panel.dataset.srNo;
-      const target = panel.dataset.target;
-      const list = panel.querySelector(".comment-thread-list");
-      const form = panel.querySelector(".comment-new-form.top-level");
+    function threadHTML(c) {
+      const replies = (c.replies || []).map(r =>
+        `<div class="comment-item"><span class="author">${escapeHtml(r.author)}</span>: ${escapeHtml(r.text)}</div>`
+      ).join("");
+      return `
+        <div class="comment-item"><span class="author">${escapeHtml(c.author)}</span>: ${escapeHtml(c.text)}</div>
+        <div class="comment-replies">${replies}</div>
+        <div class="comment-thread-actions">
+          <button type="button" data-act="reply">Reply</button>
+          <button type="button" data-act="resolve">${c.resolved ? "Reopen" : "Resolve"}</button>
+        </div>
+        <form class="comment-new-form" data-act="reply-form" style="display:none">
+          <input type="text" placeholder="Write a reply…" required><button type="submit">Reply</button>
+        </form>`;
+    }
 
-      panel.addEventListener("click", e => {
-        const threadEl = e.target.closest(".comment-thread");
-        if (!threadEl) return;
-        const commentId = threadEl.dataset.commentId;
+    document.addEventListener("click", e => {
+      const panel = e.target.closest(".comment-panel");
+      if (!panel) return;
+      const threadEl = e.target.closest(".comment-thread");
+      if (!threadEl) return;
+      const sr = panel.dataset.srNo, target = panel.dataset.target;
+      const commentId = threadEl.dataset.commentId;
 
-        if (e.target.dataset.act === "reply") {
-          const replyForm = threadEl.querySelector('[data-act="reply-form"]');
-          replyForm.style.display = replyForm.style.display === "none" ? "flex" : "none";
-        }
-        if (e.target.dataset.act === "resolve") {
-          const resolved = e.target.textContent === "Resolve";
-          post(`/episode/${episodeId}/row/${sr}/comments/${target}/${commentId}/resolve`, { resolved })
-            .then(data => {
-              if (!data.ok) return;
-              threadEl.classList.toggle("resolved", data.resolved);
-              e.target.textContent = data.resolved ? "Reopen" : "Resolve";
-            });
-        }
-      });
-
-      panel.addEventListener("submit", e => {
-        if (e.target.dataset.act !== "reply-form") return;
-        e.preventDefault();
-        const threadEl = e.target.closest(".comment-thread");
-        const commentId = threadEl.dataset.commentId;
-        const input = e.target.querySelector("input");
-        post(`/episode/${episodeId}/row/${sr}/comments/${target}/${commentId}/reply`, { text: input.value })
+      if (e.target.dataset.act === "reply") {
+        const f = threadEl.querySelector('[data-act="reply-form"]');
+        f.style.display = f.style.display === "none" ? "flex" : "none";
+      }
+      if (e.target.dataset.act === "resolve") {
+        const resolved = e.target.textContent === "Resolve";
+        post(`/episode/${episodeId}/row/${sr}/comments/${target}/${commentId}/resolve`, { resolved })
           .then(data => {
             if (!data.ok) return;
-            const repliesEl = threadEl.querySelector(".comment-replies");
-            repliesEl.insertAdjacentHTML("beforeend",
+            threadEl.classList.toggle("resolved", data.resolved);
+            e.target.textContent = data.resolved ? "Reopen" : "Resolve";
+          });
+      }
+    });
+
+    document.addEventListener("submit", e => {
+      const form = e.target.closest(".comment-new-form");
+      if (!form) return;
+      e.preventDefault();
+      const panel = form.closest(".comment-panel");
+      const sr = panel.dataset.srNo, target = panel.dataset.target;
+      const input = form.querySelector("input");
+      if (!input.value.trim()) return;
+
+      if (form.dataset.act === "reply-form") {
+        const threadEl = form.closest(".comment-thread");
+        post(`/episode/${episodeId}/row/${sr}/comments/${target}/${threadEl.dataset.commentId}/reply`, { text: input.value })
+          .then(data => {
+            if (!data.ok) return;
+            threadEl.querySelector(".comment-replies").insertAdjacentHTML("beforeend",
               `<div class="comment-item"><span class="author">${escapeHtml(data.reply.author)}</span>: ${escapeHtml(data.reply.text)}</div>`);
             input.value = "";
-            e.target.style.display = "none";
+            form.style.display = "none";
           });
-      });
-
-      form.addEventListener("submit", e => {
-        e.preventDefault();
-        const input = form.querySelector("input");
+      } else {
         post(`/episode/${episodeId}/row/${sr}/comments/${target}`, { text: input.value, author: "Reviewer" })
           .then(data => {
             if (!data.ok) return;
-            list.appendChild(renderThread(sr, target, data.comment));
+            const wrap = document.createElement("div");
+            wrap.className = "comment-thread";
+            wrap.dataset.commentId = data.comment.id;
+            wrap.innerHTML = threadHTML(data.comment);
+            panel.querySelector(".comment-thread-list").appendChild(wrap);
             input.value = "";
-            const toggle = panel.closest(".box").querySelector(".comment-toggle .count");
-            toggle.textContent = (parseInt(toggle.textContent || "0") + 1);
-            toggle.classList.remove("zero");
+            const count = panel.parentElement.querySelector(".comment-toggle .count");
+            count.textContent = parseInt(count.textContent || "0") + 1;
+            count.classList.remove("zero");
           });
+      }
+    });
+
+    // ---- filters ----
+    let currentFilter = "all";
+    function applyFilter() {
+      document.querySelectorAll(".row-card").forEach(card => {
+        const verified = card.dataset.verified === "true";
+        const flagged = card.dataset.flag === "note";
+        let show = true;
+        if (currentFilter === "unverified") show = !verified;
+        else if (currentFilter === "note") show = flagged;
+        card.hidden = !show;
+      });
+      document.querySelectorAll(".chapter").forEach(section => {
+        const anyVisible = section.querySelector(".row-card:not([hidden])");
+        section.hidden = !anyVisible;
+      });
+    }
+
+    document.querySelectorAll(".filter-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentFilter = btn.dataset.filter;
+        applyFilter();
       });
     });
 
+    // ---- jump to next unreviewed ----
+    document.getElementById("jump-next").addEventListener("click", () => {
+      const cards = [...document.querySelectorAll('.row-card[data-verified="false"]:not([hidden])')];
+      const y = window.scrollY;
+      const next = cards.find(c => c.getBoundingClientRect().top + y > y + 220) || cards[0];
+      if (next) next.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+
     updateVerifyBar({{ verified_rows | tojson }}, {{ total_rows | tojson }});
+
+    // ---- keep sticky offsets in sync with actual rendered heights ----
+    function updateStickyOffsets() {
+      const topbar = document.querySelector(".topbar");
+      const controlbar = document.getElementById("controlbar");
+      const topbarHeight = topbar ? topbar.getBoundingClientRect().height : 0;
+      controlbar.style.top = topbarHeight + "px";
+      const controlbarHeight = controlbar.getBoundingClientRect().height;
+      document.querySelectorAll(".chapter-head").forEach(el => {
+        el.style.top = (topbarHeight + controlbarHeight + 4) + "px";
+      });
+    }
+    updateStickyOffsets();
+    window.addEventListener("resize", updateStickyOffsets);
   </script>
   {% endif %}
 </div>
