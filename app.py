@@ -1,11 +1,14 @@
 """Audiobook Translation Review Platform. Language-first navigation; MongoDB persistence;
 pipeline runs synchronously in the request; results rendered dynamically from the episode doc.
 """
+import logging
 import os
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, abort, Response
 
@@ -83,16 +86,20 @@ def new_episode(lang_code):
     return redirect(url_for("episode_view", episode_id=episode_id))
 
 
+RESULTS_VIEWABLE_STATUSES = {"tts", "done"}
+
+
 @app.route("/episode/<episode_id>")
 def episode_view(episode_id):
     episode = db.get_episode(episode_id)
     if episode is None:
         abort(404)
-    if episode["status"] != "done":
+    if episode["status"] not in RESULTS_VIEWABLE_STATUSES:
         return render_template("progress.html", episode=episode)
     verified, total = db.verification_counts(episode_id)
     return render_template("episode.html", episode=episode, standalone=False,
-                            verified_rows=verified, total_rows=total)
+                            verified_rows=verified, total_rows=total,
+                            audio_in_progress=episode["status"] != "done")
 
 
 @app.route("/episode/<episode_id>/status")
@@ -107,6 +114,21 @@ def episode_status(episode_id):
         "error_message": episode.get("error_message"),
         "verified_rows": verified,
         **progress,
+    })
+
+
+@app.route("/episode/<episode_id>/audio-status")
+def episode_audio_status(episode_id):
+    episode = db.get_episode(episode_id)
+    if episode is None:
+        abort(404)
+    return jsonify({
+        "status": episode["status"],
+        "rows": [
+            {**r, "audio_url": url_for("episode_audio", episode_id=episode_id, filename=r["audio_path"])
+                              if r.get("audio_path") else None}
+            for r in db.audio_statuses(episode_id)
+        ],
     })
 
 

@@ -1,6 +1,7 @@
 """Idempotent episode pipeline: parse -> translate titles -> review -> difficult words -> TTS.
 Writes incrementally to Mongo so a retry on the same episode_id skips whatever already completed.
 """
+import logging
 import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,6 +15,8 @@ from core.voice_registry import VoicePackMissingError, cast_voices
 from config.languages import has_tts_backend, voice_key
 
 NARRATOR_VOICE_TARGET = "Narrator"
+
+logger = logging.getLogger("pipeline")
 
 
 def _rows_to_chapters(parsed: dict) -> list[dict]:
@@ -63,11 +66,18 @@ def _run_parse_stage(episode_id: str, episode: dict) -> dict:
     db.update_episode(episode_id, title=parsed["title"], translated_title=None, title_audio_path=None)
     if parsed["warnings"]:
         db.update_episode(episode_id, alignment_warnings=parsed["warnings"])
+
+    total_rows = sum(len(c["rows"]) for c in chapters)
+    logger.info(
+        "episode %s: parsed %d chapters, %d rows, title=%r, warnings=%s",
+        episode_id, len(chapters), total_rows, parsed["title"], parsed["warnings"],
+    )
     return db.get_episode(episode_id)
 
 
 def _run_title_translation_stage(episode_id: str, episode: dict) -> dict:
     if db.titles_translated(episode):
+        logger.info("episode %s: titles already translated, skipping", episode_id)
         return episode
 
     db.set_episode_status(episode_id, "translating_titles")
@@ -77,6 +87,7 @@ def _run_title_translation_stage(episode_id: str, episode: dict) -> dict:
     titles = [episode["title"]] + [c["title"] for c in episode["chapters"]]
     translated = translate_titles(client, titles, target_lang)
     episode_title, chapter_titles = translated[0], translated[1:]
+    logger.info("episode %s: translated %d titles into %s", episode_id, len(translated), target_lang)
 
     audio_lang = voice_key(episode["target_lang"])
     tts_enabled = has_tts_backend(episode["target_lang"], os.environ.get("TTS_BACKEND", "sherpa_onnx"))
@@ -105,11 +116,15 @@ def _run_review_stage(episode_id: str, episode: dict) -> dict:
     client = get_llm_client()
     for chapter in episode["chapters"]:
         if db.chapter_rows_reviewed(chapter):
+            logger.info("episode %s: chapter %d already reviewed, skipping",
+                        episode_id, chapter["chapter_number"])
             continue
         reviews = review_chapter(client, chapter["rows"])
         for row, review in zip(chapter["rows"], reviews):
             db.update_row(episode_id, row["sr_no"],
                            review_comment=review["comment"], review_flag=review["flag"])
+        logger.info("episode %s: chapter %d reviewed, %d rows",
+                    episode_id, chapter["chapter_number"], len(reviews))
     return db.get_episode(episode_id)
 
 
@@ -118,16 +133,21 @@ def _run_difficult_words_stage(episode_id: str, episode: dict) -> dict:
     client = get_llm_client()
     for chapter in episode["chapters"]:
         if db.chapter_words_found(chapter):
+            logger.info("episode %s: chapter %d difficult words already found, skipping",
+                        episode_id, chapter["chapter_number"])
             continue
         results = find_difficult_words(client, chapter["rows"])
         for row, result in zip(chapter["rows"], results):
             db.update_row(episode_id, row["sr_no"], difficult_words=result["words"])
+        logger.info("episode %s: chapter %d difficult words found, %d rows",
+                    episode_id, chapter["chapter_number"], len(results))
     return db.get_episode(episode_id)
 
 
 def _run_tts_stage(episode_id: str, episode: dict) -> dict:
     target_lang = episode["target_lang"]
     if not has_tts_backend(target_lang, os.environ.get("TTS_BACKEND", "sherpa_onnx")):
+        logger.info("episode %s: no TTS voice pack for %s, skipping audio", episode_id, target_lang)
         db.update_episode(episode_id, tts_skipped_reason="no_voice_pack_for_language")
         return db.get_episode(episode_id)
 
@@ -139,11 +159,15 @@ def _run_tts_stage(episode_id: str, episode: dict) -> dict:
         row["speaker"] for chapter in episode["chapters"] for row in chapter["rows"]
     ))
     casting = cast_voices(voice_lang, speakers)
+    logger.info("episode %s: casting for %s -> %s", episode_id, voice_lang,
+                {s: v.get("id") for s, v in casting.items()})
 
     pending_rows = [
         row for chapter in episode["chapters"] for row in chapter["rows"]
         if not db.row_audio_done(row)
     ]
+    logger.info("episode %s: synthesizing audio for %d/%d rows",
+                episode_id, len(pending_rows), sum(len(c["rows"]) for c in episode["chapters"]))
 
     def _synthesize_row(row: dict) -> None:
         text = row["translated"].strip()
@@ -170,6 +194,7 @@ def _run_tts_stage(episode_id: str, episode: dict) -> dict:
         if first_error is not None:
             raise first_error
 
+    logger.info("episode %s: audio synthesis complete", episode_id)
     return db.get_episode(episode_id)
 
 
@@ -178,6 +203,7 @@ def run_pipeline(episode_id: str) -> None:
     Idempotent: skips stages/rows already done. Expects english.docx/translated.docx
     already saved under uploads/ for this episode.
     """
+    logger.info("episode %s: pipeline starting", episode_id)
     try:
         episode = db.get_episode(episode_id)
         if episode is None:
@@ -192,8 +218,11 @@ def run_pipeline(episode_id: str) -> None:
         episode = _run_tts_stage(episode_id, episode)
 
         db.set_episode_status(episode_id, "done")
+        logger.info("episode %s: pipeline done", episode_id)
     except VoicePackMissingError as exc:
+        logger.warning("episode %s: pipeline failed (missing voice pack): %s", episode_id, exc)
         db.set_episode_status(episode_id, "failed", error_message=str(exc))
     except Exception as exc:
+        logger.exception("episode %s: pipeline failed", episode_id)
         db.set_episode_status(episode_id, "failed", error_message=str(exc))
         raise

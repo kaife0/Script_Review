@@ -149,6 +149,22 @@ def verification_counts(episode_id: str) -> tuple[int, int]:
     return counts["verified_rows"], counts["total_rows"]
 
 
+def audio_statuses(episode_id: str) -> list[dict]:
+    """Lightweight per-row audio state (sr_no, audio_status, audio_path) for
+    polling while TTS still runs in the background, without fetching full rows."""
+    pipeline = [
+        {"$match": {"_id": ObjectId(episode_id)}},
+        {"$project": {"rows": {"$reduce": {
+            "input": "$chapters", "initialValue": [],
+            "in": {"$concatArrays": ["$$value", "$$this.rows"]},
+        }}}},
+        {"$unwind": "$rows"},
+        {"$replaceRoot": {"newRoot": "$rows"}},
+        {"$project": {"_id": 0, "sr_no": 1, "audio_status": 1, "audio_path": 1}},
+    ]
+    return list(episodes_collection().aggregate(pipeline))
+
+
 def _row_filters(sr_no: int) -> list[dict]:
     return [{"r.sr_no": sr_no}, {"c.rows.sr_no": sr_no}]
 

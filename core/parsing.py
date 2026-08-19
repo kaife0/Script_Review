@@ -3,10 +3,14 @@ from dataclasses import dataclass, asdict
 import re
 from docx import Document
 
-CHAPTER_RE = re.compile(r"^Chapter\s+(\d+)\s*:\s*(.+)$", re.IGNORECASE)
-TITLE_RE = re.compile(r"^Title\s*:\s*(.+)$", re.IGNORECASE)
-THEME_RE = re.compile(r"^Theme\s*:\s*(.+)$", re.IGNORECASE)
-QUOTED_LINE_RE = re.compile(r'^"(.*)"\s*,?\s*$')
+TITLE_WORDS = "Title|Titolo|Titel|Título|Titre"
+THEME_WORDS = "Theme|Tema|Thème"
+CHAPTER_WORDS = "Chapter|Capitolo|Kapitel|Capítulo|Chapitre"
+
+CHAPTER_RE = re.compile(rf"^(?:{CHAPTER_WORDS})\s+(\d+)\s*[:\-–]\s*(.+)$", re.IGNORECASE)
+TITLE_RE = re.compile(rf"^(?:{TITLE_WORDS})\s*:\s*(.+)$", re.IGNORECASE)
+THEME_RE = re.compile(rf"^(?:{THEME_WORDS})\s*:\s*(.+)$", re.IGNORECASE)
+QUOTED_LINE_RE = re.compile(r'"([^"]*)"\s*,?')
 
 
 @dataclass
@@ -28,7 +32,13 @@ def _split_speaker(line: str) -> tuple[str, str]:
 
 
 def _parse_doc(path: str) -> tuple[str, str, list[tuple[int, str, list[tuple[str, str]]]]]:
-    """Return (title, theme, chapters) where chapters = [(chapter_num, chapter_title, [(speaker, text), ...])]."""
+    """Return (title, theme, chapters) where chapters = [(chapter_num, chapter_title, [(speaker, text), ...])].
+
+    Tolerant of `[`/`]` block markers sharing a paragraph with dialogue text
+    (rather than requiring them alone on their own line) — any paragraph
+    containing '[' opens a block, any paragraph containing ']' closes it,
+    and quoted lines are extracted from anywhere within a paragraph.
+    """
     doc = Document(path)
     title = ""
     theme = ""
@@ -55,17 +65,21 @@ def _parse_doc(path: str) -> tuple[str, str, list[tuple[int, str, list[tuple[str
                 current_lines = []
                 chapters.append((int(m.group(1)), m.group(2).strip(), current_lines))
                 continue
-            if text == "[":
-                in_block = True
-                continue
-        else:
-            if text == "]":
+
+        if "[" in text:
+            in_block = True
+            text = text.split("[", 1)[1]
+
+        if in_block:
+            closes = "]" in text
+            if closes:
+                text = text.split("]", 1)[0]
+            if current_lines is not None:
+                for m in QUOTED_LINE_RE.finditer(text):
+                    speaker, dialogue = _split_speaker(m.group(1))
+                    current_lines.append((speaker, dialogue))
+            if closes:
                 in_block = False
-                continue
-            m = QUOTED_LINE_RE.match(text)
-            if m and current_lines is not None:
-                speaker, dialogue = _split_speaker(m.group(1))
-                current_lines.append((speaker, dialogue))
 
     return title, theme, chapters
 

@@ -125,7 +125,7 @@
 
   function poll() {
     fetch(`/episode/${episodeId}/status`).then(r => r.json()).then(data => {
-      if (data.status === "done" || data.status === "failed") {
+      if (["tts", "done", "failed"].includes(data.status)) {
         window.location.reload();
         return;
       }
@@ -133,7 +133,7 @@
       setTimeout(poll, 1500);
     }).catch(() => setTimeout(poll, 3000));
   }
-  {% if episode.status not in ("done", "failed") %}
+  {% if episode.status not in ("tts", "done", "failed") %}
   poll();
   {% endif %}
 </script>
