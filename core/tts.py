@@ -5,10 +5,12 @@ Backend selection via TTS_BACKEND env var: sherpa_onnx | google | xtts.
 import os
 import subprocess
 import tempfile
+import threading
 
 from core.voice_registry import resolve_voice_model
 
 _sherpa_engine_cache: dict[str, object] = {}
+_sherpa_engine_lock = threading.Lock()
 
 
 class TTSBackend:
@@ -43,21 +45,24 @@ class SherpaOnnxBackend(TTSBackend):
         if key in _sherpa_engine_cache:
             return _sherpa_engine_cache[key]
 
-        paths = resolve_voice_model(lang, voice_id)
-        config = sherpa_onnx.OfflineTtsConfig(
-            model=sherpa_onnx.OfflineTtsModelConfig(
-                vits=sherpa_onnx.OfflineTtsVitsModelConfig(
-                    model=paths["model"],
-                    tokens=paths["tokens"],
-                    data_dir=paths["data_dir"],
+        with _sherpa_engine_lock:
+            if key in _sherpa_engine_cache:
+                return _sherpa_engine_cache[key]
+            paths = resolve_voice_model(lang, voice_id)
+            config = sherpa_onnx.OfflineTtsConfig(
+                model=sherpa_onnx.OfflineTtsModelConfig(
+                    vits=sherpa_onnx.OfflineTtsVitsModelConfig(
+                        model=paths["model"],
+                        tokens=paths["tokens"],
+                        data_dir=paths["data_dir"],
+                    ),
+                    num_threads=1,
+                    provider="cpu",
                 ),
-                num_threads=1,
-                provider="cpu",
-            ),
-        )
-        engine = sherpa_onnx.OfflineTts(config)
-        _sherpa_engine_cache[key] = engine
-        return engine
+            )
+            engine = sherpa_onnx.OfflineTts(config)
+            _sherpa_engine_cache[key] = engine
+            return engine
 
     def synthesize(self, text: str, voice: dict, lang: str) -> bytes:
         import soundfile as sf

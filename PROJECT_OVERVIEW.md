@@ -34,10 +34,12 @@ A web app for reviewing translated kids' audiobook scripts: upload an English ma
 
 **2. You upload two scripts.** They're saved to cloud storage right away.
 
-**3. The app processes the episode**, right there while you wait:
+**3. The app processes the episode in the background**, so the page responds instantly instead of making you wait and stare at a frozen screen:
    - Reads both documents and matches up each line of dialogue between English and the translation.
+   - Translates the episode title and each chapter title, with its own narrated audio.
    - Sends the lines to the AI for review, chapter by chapter, and gets back a comment and a flag for each one.
-   - Generates spoken audio for every translated line, using a different voice for each character so it doesn't sound like one narrator reading everyone's parts.
+   - Finds difficult or tricky words per line and suggests a couple of translation options with plain-English meanings, for the reviewer's reference.
+   - Generates spoken audio for every translated line, in parallel, using a different voice for each character so it doesn't sound like one narrator reading everyone's parts.
 
 **4. Everything is saved as it happens**, not just at the end. This means if something goes wrong partway through, restarting the job doesn't start over from scratch — it only redoes the part that failed.
 
@@ -49,6 +51,6 @@ A web app for reviewing translated kids' audiobook scripts: upload an English ma
 
 ## Current status
 
-**Working:** the website, uploading, the review page, editing, the progress tracker, exports, and voices are set up for all four languages (Italian, German, Spanish, French).
+**Working:** the website, uploading (processed in the background so the page never freezes), the review page with per-line editing and undo/redo, comments, the progress tracker, exports, and voice generation are all built and confirmed working for Italian, with the same setup in place for German, Spanish, and French.
 
-**Not turned on yet:** the AI review step needs an API key that hasn't been added yet — this is intentional, waiting on a decision about which AI model to use. Until that's added, uploads won't complete the full process. Voice generation for the three newer languages (German, Spanish, French) is wired up the same way as Italian's, but hasn't been listened to yet since it only runs after the AI review step.
+**Not turned on yet:** the AI review step is fully wired up to the real Claude API, but the account's billing hasn't been set up yet, so live AI calls fail with a billing error rather than a code error. Once billing is added, no further changes are needed — reviewing, difficult-words, and title translation will all start working immediately.

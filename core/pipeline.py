@@ -3,6 +3,7 @@ Writes incrementally to Mongo so a retry on the same episode_id skips whatever a
 """
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from core import db, storage
 from core.llm_client import get_llm_client
@@ -139,23 +140,35 @@ def _run_tts_stage(episode_id: str, episode: dict) -> dict:
     ))
     casting = cast_voices(voice_lang, speakers)
 
-    for chapter in episode["chapters"]:
-        for row in chapter["rows"]:
-            if db.row_audio_done(row):
-                continue
-            text = row["translated"].strip()
-            if not text:
-                db.update_row(episode_id, row["sr_no"], audio_status="done", audio_path=None)
-                continue
+    pending_rows = [
+        row for chapter in episode["chapters"] for row in chapter["rows"]
+        if not db.row_audio_done(row)
+    ]
+
+    def _synthesize_row(row: dict) -> None:
+        text = row["translated"].strip()
+        if not text:
+            db.update_row(episode_id, row["sr_no"], audio_status="done", audio_path=None)
+            return
+        voice = casting[row["speaker"]]
+        audio_bytes = backend.synthesize(text, voice, voice_lang)
+        filename = f"row_{row['sr_no']}.mp3"
+        storage.save_bytes(episode_id, f"audio/{filename}", audio_bytes)
+        db.update_row(episode_id, row["sr_no"], audio_status="done", audio_path=filename)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(_synthesize_row, row): row for row in pending_rows}
+        first_error = None
+        for future in as_completed(futures):
+            row = futures[future]
             try:
-                voice = casting[row["speaker"]]
-                audio_bytes = backend.synthesize(text, voice, voice_lang)
-                filename = f"row_{row['sr_no']}.mp3"
-                storage.save_bytes(episode_id, f"audio/{filename}", audio_bytes)
-                db.update_row(episode_id, row["sr_no"], audio_status="done", audio_path=filename)
+                future.result()
             except Exception as exc:
                 db.update_row(episode_id, row["sr_no"], audio_status="failed")
-                raise RuntimeError(f"TTS failed for row {row['sr_no']}: {exc}") from exc
+                if first_error is None:
+                    first_error = RuntimeError(f"TTS failed for row {row['sr_no']}: {exc}")
+        if first_error is not None:
+            raise first_error
 
     return db.get_episode(episode_id)
 
