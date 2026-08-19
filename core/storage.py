@@ -49,7 +49,7 @@ def list_files(episode_id: str, prefix: str) -> list[str]:
     """List filenames (not full paths) under episode_id/prefix/."""
     key_prefix = f"{episode_id}/{prefix}/"
     if using_gcs():
-        blobs = _bucket_client().client.list_blobs(_bucket_client(), prefix=key_prefix)
+        blobs = _bucket_client().list_blobs(prefix=key_prefix)
         return [b.name[len(key_prefix):] for b in blobs]
     dir_path = os.path.join(_LOCAL_ROOT, episode_id, prefix)
     if not os.path.isdir(dir_path):
@@ -60,8 +60,7 @@ def list_files(episode_id: str, prefix: str) -> list[str]:
 def delete_episode_files(episode_id: str) -> None:
     """Remove every uploaded/generated file for this episode."""
     if using_gcs():
-        bucket = _bucket_client()
-        for blob in bucket.client.list_blobs(bucket, prefix=f"{episode_id}/"):
+        for blob in _bucket_client().list_blobs(prefix=f"{episode_id}/"):
             blob.delete()
         return
     import shutil

@@ -5,6 +5,7 @@ Drives the upload-form dropdown and lets the UI say "TTS available" vs
 lists backend keys (see core/tts.py) that have a configured voice pool for
 this language; empty list = review-only, no audio.
 """
+import os
 
 SUPPORTED_LANGUAGES = [
     {"code": "it", "name": "Italian", "voice_key": "italian", "voice_backends": ["sherpa_onnx"]},
@@ -25,9 +26,13 @@ def language_name(code: str) -> str:
     return lang["name"] if lang else code
 
 
-def has_tts_backend(code: str, backend: str) -> bool:
+def current_tts_backend() -> str:
+    return os.environ.get("TTS_BACKEND", "sherpa_onnx")
+
+
+def has_tts_backend(code: str, backend: str | None = None) -> bool:
     lang = get_language(code)
-    return bool(lang) and backend in lang["voice_backends"]
+    return bool(lang) and (backend or current_tts_backend()) in lang["voice_backends"]
 
 
 def voice_key(code: str) -> str:

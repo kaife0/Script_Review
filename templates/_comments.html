@@ -11,15 +11,20 @@
   <div class="comment-thread-list">
     {% for c in thread %}
     <div class="comment-thread {{ 'resolved' if c.resolved }}" data-comment-id="{{ c.id }}">
+      {% if c.anchor %}<div class="anchor-quote-preview">&ldquo;{{ c.anchor.quote }}&rdquo;</div>{% endif %}
       <div class="comment-item"><span class="author">{{ c.author }}</span>: {{ c.text }}</div>
       <div class="comment-replies">
         {% for r in c.replies %}
-        <div class="comment-item"><span class="author">{{ r.author }}</span>: {{ r.text }}</div>
+        <div class="comment-item" data-reply-id="{{ r.id }}">
+          <span class="author">{{ r.author }}</span>: {{ r.text }}
+          <button type="button" class="comment-delete-btn" data-act="delete-reply" title="Delete reply">&times;</button>
+        </div>
         {% endfor %}
       </div>
       <div class="comment-thread-actions">
         <button type="button" data-act="reply">Reply</button>
         <button type="button" data-act="resolve">{{ 'Reopen' if c.resolved else 'Resolve' }}</button>
+        <button type="button" data-act="delete" class="comment-delete-link">Delete</button>
       </div>
       <form class="comment-new-form" data-act="reply-form" style="display:none">
         <input type="text" placeholder="Write a reply…" required>
@@ -28,6 +33,9 @@
     {% endfor %}
   </div>
   <form class="comment-new-form top-level">
+    <input type="hidden" name="anchor_quote" value="">
+    <input type="hidden" name="anchor_start" value="">
+    <input type="hidden" name="anchor_end" value="">
     <input type="text" placeholder="Add a comment…" required>
   </form>
 </div>

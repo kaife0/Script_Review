@@ -19,6 +19,13 @@
       </form>
     </div>
   {% else %}
+    <div class="alert alert-error" style="margin-bottom:1.25rem;" id="stalled-banner" hidden>
+      This looks stuck — processing stopped without finishing or failing cleanly. Retry to pick up where it left off.
+      <form method="post" action="{{ url_for('episode_retry', episode_id=episode._id) }}"
+            data-pending-text="Retrying…" style="margin-top:0.6rem;">
+        <button class="btn btn-sm" type="submit">Retry now</button>
+      </form>
+    </div>
     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.4rem;">
       <div style="display:flex; align-items:center; gap:0.9rem;">
         <span class="spinner"></span>
@@ -95,6 +102,9 @@
   };
 
   function applyProgress(data) {
+    const stalledBanner = document.getElementById("stalled-banner");
+    if (stalledBanner) stalledBanner.hidden = !data.stalled;
+
     const currentIndex = STAGES.indexOf(data.status);
     document.querySelectorAll(".stage").forEach(li => {
       const stageIndex = STAGES.indexOf(li.dataset.stage);

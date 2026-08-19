@@ -86,11 +86,14 @@ def _run_title_translation_stage(episode_id: str, episode: dict) -> dict:
 
     titles = [episode["title"]] + [c["title"] for c in episode["chapters"]]
     translated = translate_titles(client, titles, target_lang)
+    assert len(translated) == len(titles), (
+        f"translate_titles returned {len(translated)} titles for {len(titles)} inputs"
+    )
     episode_title, chapter_titles = translated[0], translated[1:]
     logger.info("episode %s: translated %d titles into %s", episode_id, len(translated), target_lang)
 
     audio_lang = voice_key(episode["target_lang"])
-    tts_enabled = has_tts_backend(episode["target_lang"], os.environ.get("TTS_BACKEND", "sherpa_onnx"))
+    tts_enabled = has_tts_backend(episode["target_lang"])
     backend = get_backend() if tts_enabled else None
     narrator_voice = cast_voices(audio_lang, [NARRATOR_VOICE_TARGET])[NARRATOR_VOICE_TARGET] if tts_enabled else None
 
@@ -146,7 +149,7 @@ def _run_difficult_words_stage(episode_id: str, episode: dict) -> dict:
 
 def _run_tts_stage(episode_id: str, episode: dict) -> dict:
     target_lang = episode["target_lang"]
-    if not has_tts_backend(target_lang, os.environ.get("TTS_BACKEND", "sherpa_onnx")):
+    if not has_tts_backend(target_lang):
         logger.info("episode %s: no TTS voice pack for %s, skipping audio", episode_id, target_lang)
         db.update_episode(episode_id, tts_skipped_reason="no_voice_pack_for_language")
         return db.get_episode(episode_id)

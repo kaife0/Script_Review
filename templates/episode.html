@@ -1,4 +1,5 @@
-{% import "_comments.html" as comments %}
+﻿{% import "_comments.html" as comments %}
+{% import "_macros.html" as macros %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -125,6 +126,21 @@
   .reviewer-textarea { width: 100%; min-height: 5.5rem; font-family: inherit; font-size: 0.9rem;
     padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; resize: vertical; background: #fff; }
   .reviewer-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+  /* ---- Confluence-style anchored text comments ---- */
+  .anchorable { cursor: text; user-select: text; }
+  .anchor-mark { background: #fef08a; border-bottom: 2px solid #ca8a04; cursor: pointer; border-radius: 2px; }
+  .anchor-mark:hover { background: #fde047; }
+  .anchor-mark.resolved-mark { background: #f3f4f6; border-bottom-color: #9ca3af; }
+
+  .selection-comment-btn { position: absolute; z-index: 50; background: var(--primary); color: #fff;
+    border: none; border-radius: 6px; padding: 0.35rem 0.7rem; font-size: 0.76rem; font-weight: 700;
+    cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.18); display: none; align-items: center; gap: 0.3rem; }
+  .selection-comment-btn.visible { display: inline-flex; }
+  .selection-comment-btn:hover { background: var(--primary-dark); }
+
+  .anchor-quote-preview { background: #fffbeb; border-left: 3px solid var(--note); padding: 0.4rem 0.6rem;
+    font-size: 0.78rem; color: #78350f; margin-bottom: 0.4rem; border-radius: 4px; font-style: italic; }
+
   .reviewer-controls { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.45rem; flex-wrap: wrap; }
   .complete-toggle { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.28rem 0.6rem;
     border-radius: 6px; border: 1px dashed var(--border); background: #fff; cursor: pointer;
@@ -174,6 +190,10 @@
   .comment-thread-actions { display: flex; gap: 0.5rem; margin-top: 0.35rem; }
   .comment-thread-actions button { background: none; border: none; color: var(--primary); cursor: pointer;
     font-size: 0.74rem; font-weight: 600; padding: 0; }
+  .comment-delete-link { color: #b91c1c !important; }
+  .comment-delete-btn { background: none; border: none; color: #b91c1c; cursor: pointer; font-size: 0.85rem;
+    font-weight: 700; padding: 0 0 0 0.4rem; line-height: 1; }
+  .comment-item[data-reply-id] { display: flex; align-items: baseline; justify-content: space-between; gap: 0.3rem; }
   .comment-new-form { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
   .comment-new-form input { flex: 1; font-size: 0.82rem; padding: 0.4rem 0.55rem; border: 1px solid #cbd5e1;
     border-radius: 6px; font-family: inherit; background: #fff; }
@@ -264,11 +284,7 @@
       <div class="tr">{{ episode.translated_title or episode.title }}</div>
     </div>
     {% if episode.title_audio_path %}
-      {% if standalone %}
-        <audio controls preload="none" style="width:240px" src="audio/{{ episode.title_audio_path }}"></audio>
-      {% else %}
-        <audio controls preload="none" style="width:240px" src="{{ url_for('episode_audio', episode_id=episode._id, filename=episode.title_audio_path) }}"></audio>
-      {% endif %}
+      {{ macros.audio_tag(episode._id, episode.title_audio_path, standalone, 'style="width:240px"') }}
     {% endif %}
   </div>
 
@@ -283,11 +299,7 @@
       {% if chapter.title_audio_path %}
       <div class="audio-strip" style="border-top:none; background:transparent; padding-left:0;">
         <span class="strip-label">Chapter title audio</span>
-        {% if standalone %}
-          <audio controls preload="none" src="audio/{{ chapter.title_audio_path }}"></audio>
-        {% else %}
-          <audio controls preload="none" src="{{ url_for('episode_audio', episode_id=episode._id, filename=chapter.title_audio_path) }}"></audio>
-        {% endif %}
+        {{ macros.audio_tag(episode._id, chapter.title_audio_path, standalone) }}
       </div>
       {% endif %}
     </div>
@@ -326,8 +338,14 @@
               English
               {% if not standalone %}{{ comments.comment_toggle('english', row) }}{% endif %}
             </div>
-            <div class="box-text">{{ row.english }}</div>
-            {% if not standalone %}{{ comments.comment_panel('english', row, episode._id) }}{% endif %}
+            {% if not standalone %}
+              <div class="box-text anchorable" data-sr-no="{{ row.sr_no }}" data-target="english"
+                   data-raw-text="{{ row.english }}">{{ row.english }}</div>
+              <script type="application/json" class="anchor-data" data-sr-no="{{ row.sr_no }}" data-target="english">{{ row.comments.english | selectattr('anchor') | list | tojson }}</script>
+              {{ comments.comment_panel('english', row, episode._id) }}
+            {% else %}
+              <div class="box-text">{{ row.english }}</div>
+            {% endif %}
           </div>
 
           <div class="box">
@@ -335,8 +353,14 @@
               AI Translated
               {% if not standalone %}{{ comments.comment_toggle('ai_translation', row) }}{% endif %}
             </div>
-            <div class="box-text italian">{{ row.translated }}</div>
-            {% if not standalone %}{{ comments.comment_panel('ai_translation', row, episode._id) }}{% endif %}
+            {% if not standalone %}
+              <div class="box-text italian anchorable" data-sr-no="{{ row.sr_no }}" data-target="ai_translation"
+                   data-raw-text="{{ row.translated }}">{{ row.translated }}</div>
+              <script type="application/json" class="anchor-data" data-sr-no="{{ row.sr_no }}" data-target="ai_translation">{{ row.comments.ai_translation | selectattr('anchor') | list | tojson }}</script>
+              {{ comments.comment_panel('ai_translation', row, episode._id) }}
+            {% else %}
+              <div class="box-text italian">{{ row.translated }}</div>
+            {% endif %}
           </div>
 
           <div class="box">
@@ -384,11 +408,7 @@
         <div class="audio-strip" data-audio-slot="{{ row.sr_no }}">
           <span class="strip-label">{{ episode.target_lang_name }} audio</span>
           {% if row.audio_path %}
-            {% if standalone %}
-              <audio controls preload="none" src="audio/{{ row.audio_path }}"></audio>
-            {% else %}
-              <audio controls preload="none" src="{{ url_for('episode_audio', episode_id=episode._id, filename=row.audio_path) }}"></audio>
-            {% endif %}
+            {{ macros.audio_tag(episode._id, row.audio_path, standalone) }}
           {% elif not standalone and audio_in_progress and row.audio_status not in ("done", "failed") %}
             <span class="audio-generating"><span class="mini-spinner"></span>Generating audio&hellip;</span>
           {% elif row.audio_status == "failed" %}
@@ -413,264 +433,12 @@
   {% endfor %}
 
   {% if not standalone %}
-  <script>
-    const episodeId = {{ episode._id | tojson }};
-
-    function post(url, data) {
-      const body = new FormData();
-      for (const [key, value] of Object.entries(data || {})) body.set(key, value);
-      return fetch(url, { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" }, body })
-        .then(r => r.json());
-    }
-
-    function updateVerifyBar(verified, total) {
-      const pct = total ? Math.round((verified / total) * 100) : 0;
-      document.getElementById("verify-pct").textContent = pct + "%";
-      document.getElementById("verify-fill").style.width = pct + "%";
-      document.getElementById("verify-count").textContent = `${verified} / ${total} lines verified`;
-    }
-
-    // ---- verify toggle ----
-    document.addEventListener("click", e => {
-      const btn = e.target.closest(".verify-toggle");
-      if (!btn) return;
-      const sr = btn.dataset.srNo;
-      const next = btn.dataset.verified !== "true";
-      post(`/episode/${episodeId}/row/${sr}`, { human_verified: next }).then(data => {
-        if (!data.ok) return;
-        const card = btn.closest(".row-card");
-        btn.dataset.verified = String(next);
-        card.dataset.verified = String(next);
-        btn.textContent = next ? "✓ Verified" : "Mark verified";
-        btn.classList.toggle("btn-secondary", !next);
-        card.classList.toggle("is-verified", next);
-        const pill = card.querySelector(".status-pill");
-        pill.textContent = next ? "Verified" : "Needs review";
-        pill.classList.toggle("verified", next);
-        pill.classList.toggle("pending", !next);
-        updateVerifyBar(data.verified_rows, data.total_rows);
-        applyFilter();
-      });
-    });
-
-    // ---- reviewer text autosave ----
-    const saveTimers = {};
-    document.addEventListener("input", e => {
-      const textarea = e.target.closest('[data-role="reviewer-text"]');
-      if (!textarea) return;
-      const sr = textarea.dataset.srNo;
-      const state = document.querySelector(`[data-save-state="${sr}"]`);
-      state.textContent = "Saving…";
-      clearTimeout(saveTimers[sr]);
-      saveTimers[sr] = setTimeout(() => {
-        post(`/episode/${episodeId}/row/${sr}/reviewer-text`, { text: textarea.value })
-          .then(() => {
-            state.textContent = "Saved";
-            setTimeout(() => { state.textContent = ""; }, 1500);
-          });
-      }, 700);
-    });
-
-    // ---- undo / redo / complete ----
-    document.addEventListener("click", e => {
-      const btn = e.target.closest('[data-action="undo"], [data-action="redo"]');
-      if (!btn) return;
-      const sr = btn.dataset.srNo;
-      post(`/episode/${episodeId}/row/${sr}/reviewer-text/${btn.dataset.action}`).then(data => {
-        if (!data.ok) return;
-        document.querySelector(`[data-role="reviewer-text"][data-sr-no="${sr}"]`).value = data.text;
-      });
-    });
-
-    document.addEventListener("click", e => {
-      const btn = e.target.closest(".complete-toggle");
-      if (!btn) return;
-      const sr = btn.dataset.srNo;
-      const next = btn.dataset.complete !== "true";
-      post(`/episode/${episodeId}/row/${sr}/complete`, { complete: next }).then(data => {
-        if (!data.ok) return;
-        btn.dataset.complete = String(next);
-        btn.classList.toggle("done", next);
-        btn.textContent = next ? "✓ Complete" : "Mark complete";
-      });
-    });
-
-    // ---- comment panels ----
-    document.addEventListener("click", e => {
-      const btn = e.target.closest(".comment-toggle");
-      if (!btn) return;
-      const container = btn.closest(".box") || btn.closest(".audio-comment-wrap");
-      container.querySelector(".comment-panel").classList.toggle("open");
-    });
-
-    function escapeHtml(s) {
-      const div = document.createElement("div");
-      div.textContent = s;
-      return div.innerHTML;
-    }
-
-    function threadHTML(c) {
-      const replies = (c.replies || []).map(r =>
-        `<div class="comment-item"><span class="author">${escapeHtml(r.author)}</span>: ${escapeHtml(r.text)}</div>`
-      ).join("");
-      return `
-        <div class="comment-item"><span class="author">${escapeHtml(c.author)}</span>: ${escapeHtml(c.text)}</div>
-        <div class="comment-replies">${replies}</div>
-        <div class="comment-thread-actions">
-          <button type="button" data-act="reply">Reply</button>
-          <button type="button" data-act="resolve">${c.resolved ? "Reopen" : "Resolve"}</button>
-        </div>
-        <form class="comment-new-form" data-act="reply-form" style="display:none">
-          <input type="text" placeholder="Write a reply…" required><button type="submit">Reply</button>
-        </form>`;
-    }
-
-    document.addEventListener("click", e => {
-      const panel = e.target.closest(".comment-panel");
-      if (!panel) return;
-      const threadEl = e.target.closest(".comment-thread");
-      if (!threadEl) return;
-      const sr = panel.dataset.srNo, target = panel.dataset.target;
-      const commentId = threadEl.dataset.commentId;
-
-      if (e.target.dataset.act === "reply") {
-        const f = threadEl.querySelector('[data-act="reply-form"]');
-        f.style.display = f.style.display === "none" ? "flex" : "none";
-      }
-      if (e.target.dataset.act === "resolve") {
-        const resolved = e.target.textContent === "Resolve";
-        post(`/episode/${episodeId}/row/${sr}/comments/${target}/${commentId}/resolve`, { resolved })
-          .then(data => {
-            if (!data.ok) return;
-            threadEl.classList.toggle("resolved", data.resolved);
-            e.target.textContent = data.resolved ? "Reopen" : "Resolve";
-          });
-      }
-    });
-
-    document.addEventListener("submit", e => {
-      const form = e.target.closest(".comment-new-form");
-      if (!form) return;
-      e.preventDefault();
-      const panel = form.closest(".comment-panel");
-      const sr = panel.dataset.srNo, target = panel.dataset.target;
-      const input = form.querySelector("input");
-      if (!input.value.trim()) return;
-
-      if (form.dataset.act === "reply-form") {
-        const threadEl = form.closest(".comment-thread");
-        post(`/episode/${episodeId}/row/${sr}/comments/${target}/${threadEl.dataset.commentId}/reply`, { text: input.value })
-          .then(data => {
-            if (!data.ok) return;
-            threadEl.querySelector(".comment-replies").insertAdjacentHTML("beforeend",
-              `<div class="comment-item"><span class="author">${escapeHtml(data.reply.author)}</span>: ${escapeHtml(data.reply.text)}</div>`);
-            input.value = "";
-            form.style.display = "none";
-          });
-      } else {
-        post(`/episode/${episodeId}/row/${sr}/comments/${target}`, { text: input.value, author: "Reviewer" })
-          .then(data => {
-            if (!data.ok) return;
-            const wrap = document.createElement("div");
-            wrap.className = "comment-thread";
-            wrap.dataset.commentId = data.comment.id;
-            wrap.innerHTML = threadHTML(data.comment);
-            panel.querySelector(".comment-thread-list").appendChild(wrap);
-            input.value = "";
-            const count = panel.parentElement.querySelector(".comment-toggle .count");
-            count.textContent = parseInt(count.textContent || "0") + 1;
-            count.classList.remove("zero");
-          });
-      }
-    });
-
-    // ---- filters ----
-    let currentFilter = "all";
-    function applyFilter() {
-      document.querySelectorAll(".row-card").forEach(card => {
-        const verified = card.dataset.verified === "true";
-        const flagged = card.dataset.flag === "note";
-        let show = true;
-        if (currentFilter === "unverified") show = !verified;
-        else if (currentFilter === "note") show = flagged;
-        card.hidden = !show;
-      });
-      document.querySelectorAll(".chapter").forEach(section => {
-        const anyVisible = section.querySelector(".row-card:not([hidden])");
-        section.hidden = !anyVisible;
-      });
-    }
-
-    document.querySelectorAll(".filter-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
-        btn.classList.add("active");
-        currentFilter = btn.dataset.filter;
-        applyFilter();
-      });
-    });
-
-    // ---- jump to next unreviewed ----
-    document.getElementById("jump-next").addEventListener("click", () => {
-      const cards = [...document.querySelectorAll('.row-card[data-verified="false"]:not([hidden])')];
-      const y = window.scrollY;
-      const next = cards.find(c => c.getBoundingClientRect().top + y > y + 220) || cards[0];
-      if (next) next.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
-
-    updateVerifyBar({{ verified_rows | tojson }}, {{ total_rows | tojson }});
-
-    // ---- keep sticky offsets in sync with actual rendered heights ----
-    function updateStickyOffsets() {
-      const topbar = document.querySelector(".topbar");
-      const controlbar = document.getElementById("controlbar");
-      const topbarHeight = topbar ? topbar.getBoundingClientRect().height : 0;
-      controlbar.style.top = topbarHeight + "px";
-      const controlbarHeight = controlbar.getBoundingClientRect().height;
-      document.querySelectorAll(".chapter-head").forEach(el => {
-        el.style.top = (topbarHeight + controlbarHeight + 4) + "px";
-      });
-    }
-    updateStickyOffsets();
-    window.addEventListener("resize", updateStickyOffsets);
-
-    // ---- fill in audio as it finishes generating in the background ----
-    {% if audio_in_progress %}
-    function pollAudioStatus() {
-      fetch(`/episode/${episodeId}/audio-status`).then(r => r.json()).then(data => {
-        let anyPending = false;
-        for (const row of data.rows) {
-          const slot = document.querySelector(`.audio-strip[data-audio-slot="${row.sr_no}"]`);
-          if (!slot) continue;
-          const card = slot.closest(".row-card");
-          if (row.audio_status === "done" && row.audio_url) {
-            if (!slot.querySelector("audio")) {
-              const placeholder = slot.querySelector(".audio-generating, .no-audio");
-              const audio = document.createElement("audio");
-              audio.controls = true;
-              audio.preload = "none";
-              audio.src = row.audio_url;
-              if (placeholder) placeholder.replaceWith(audio);
-              else slot.insertBefore(audio, slot.firstChild.nextSibling);
-              if (card) card.dataset.audioStatus = "done";
-            }
-          } else if (row.audio_status === "failed") {
-            if (card) card.dataset.audioStatus = "failed";
-          } else {
-            anyPending = true;
-          }
-        }
-        if (data.status === "done") {
-          const banner = document.getElementById("audio-progress-banner");
-          if (banner) banner.remove();
-          return;
-        }
-        if (anyPending) setTimeout(pollAudioStatus, 3000);
-      }).catch(() => setTimeout(pollAudioStatus, 5000));
-    }
-    pollAudioStatus();
-    {% endif %}
-  </script>
+  <div id="episode-config" hidden
+       data-episode-id="{{ episode._id }}"
+       data-verified-rows="{{ verified_rows }}"
+       data-total-rows="{{ total_rows }}"
+       data-audio-in-progress="{{ 'true' if audio_in_progress else 'false' }}"></div>
+  <script src="{{ url_for('static', filename='js/episode.js') }}" defer></script>
   {% endif %}
 </div>
 </body>

@@ -2,8 +2,10 @@
 
 A plain background thread, not a queue: this app runs as a single process, and
 MongoDB already gives us the incremental, resumable state the pipeline needs.
-Cloud Run keeps the instance alive via min-instances=1, so the thread isn't
-killed mid-job when the request that started it finishes.
+On Cloud Run at scale-to-zero, an idle instance can be reclaimed mid-job,
+silently killing this thread — is_running() lets callers detect an episode
+stuck mid-stage with no active thread, so it can be surfaced/retried rather
+than left stuck forever.
 """
 import threading
 
