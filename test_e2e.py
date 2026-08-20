@@ -376,6 +376,16 @@ class EndToEndTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["text"], "Capitolo Modificato")
 
+    def test_chapter_title_routes_missing_chapter_returns_404(self):
+        episode_id = self._make_parsed_episode()
+        for resp in (
+            self.client.post(f"/episode/{episode_id}/chapter/999/title/reviewer-text", data={"text": "x"}),
+            self.client.post(f"/episode/{episode_id}/chapter/999/title/reviewer-text/undo"),
+            self.client.post(f"/episode/{episode_id}/chapter/999/title/reviewer-text/redo"),
+            self.client.post(f"/episode/{episode_id}/chapter/999/title/regenerate-audio"),
+        ):
+            self.assertEqual(resp.status_code, 404)
+
     def test_title_comment_round_trip_and_anchored(self):
         episode_id = self._make_parsed_episode()
         text = "Direct Test Episode"
