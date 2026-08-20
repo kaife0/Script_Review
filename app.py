@@ -404,36 +404,40 @@ def redo_episode_title_reviewer_text(episode_id):
 
 
 @app.route("/episode/<episode_id>/chapter/<int:chapter_number>/title/reviewer-text", methods=["POST"])
+@_row_not_found_as_404
 def update_chapter_title_reviewer_text(episode_id, chapter_number):
     db.set_chapter_reviewer_text(episode_id, chapter_number, request.form.get("text", ""))
     return _title_reviewer_text_response(episode_id, f"chapter:{chapter_number}")
 
 
 @app.route("/episode/<episode_id>/chapter/<int:chapter_number>/title/reviewer-text/undo", methods=["POST"])
+@_row_not_found_as_404
 def undo_chapter_title_reviewer_text(episode_id, chapter_number):
     db.move_chapter_reviewer_history(episode_id, chapter_number, "undo")
     return _title_reviewer_text_response(episode_id, f"chapter:{chapter_number}")
 
 
 @app.route("/episode/<episode_id>/chapter/<int:chapter_number>/title/reviewer-text/redo", methods=["POST"])
+@_row_not_found_as_404
 def redo_chapter_title_reviewer_text(episode_id, chapter_number):
     db.move_chapter_reviewer_history(episode_id, chapter_number, "redo")
     return _title_reviewer_text_response(episode_id, f"chapter:{chapter_number}")
 
 
 def _regenerate_title_audio(episode_id, episode, text, save_audio):
+    """(Re)synthesize one title's audio. Returns (json_dict, status_code). On success,
+    json_dict["audio_path"] is set (or None for blank text) -- callers persist it themselves,
+    since episode-title and chapter-title use different db.set_*_title_audio calls."""
     if not has_tts_backend(episode["target_lang"]):
         abort(400, "No TTS voice pack for this language")
     try:
         audio_bytes = synthesize_title_audio(episode["target_lang"], text)
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
-    audio_path = None
-    if audio_bytes is not None:
-        audio_path = save_audio(audio_bytes)
+        return {"ok": False, "error": str(exc)}, 500
+    audio_path = save_audio(audio_bytes) if audio_bytes is not None else None
     audio_url = url_for("episode_audio", episode_id=episode_id, filename=audio_path) if audio_path else None
-    return jsonify({"ok": True, "audio_path": audio_path, "audio_status": "done",
-                     "audio_url": audio_url, "audio_stale": False})
+    return {"ok": True, "audio_path": audio_path, "audio_status": "done",
+            "audio_url": audio_url, "audio_stale": False}, 200
 
 
 @app.route("/episode/<episode_id>/title/regenerate-audio", methods=["POST"])
@@ -447,17 +451,15 @@ def regenerate_episode_title_audio(episode_id):
         storage.save_bytes(episode_id, "audio/title.mp3", audio_bytes)
         return "title.mp3"
 
-    result = _regenerate_title_audio(episode_id, episode, text, save_audio)
-    if isinstance(result, tuple):
-        return result
-    data = result.get_json()
+    data, status = _regenerate_title_audio(episode_id, episode, text, save_audio)
     if data["ok"]:
         db.set_episode_title_audio(episode_id, audio_path=data["audio_path"], audio_status="done",
                                     audio_generated_from_text=text)
-    return result
+    return jsonify(data), status
 
 
 @app.route("/episode/<episode_id>/chapter/<int:chapter_number>/title/regenerate-audio", methods=["POST"])
+@_row_not_found_as_404
 def regenerate_chapter_title_audio(episode_id, chapter_number):
     episode = db.get_episode(episode_id)
     if episode is None:
@@ -470,14 +472,11 @@ def regenerate_chapter_title_audio(episode_id, chapter_number):
         storage.save_bytes(episode_id, f"audio/{filename}", audio_bytes)
         return filename
 
-    result = _regenerate_title_audio(episode_id, episode, text, save_audio)
-    if isinstance(result, tuple):
-        return result
-    data = result.get_json()
+    data, status = _regenerate_title_audio(episode_id, episode, text, save_audio)
     if data["ok"]:
         db.set_chapter_title_audio(episode_id, chapter_number, audio_path=data["audio_path"],
                                     audio_status="done", audio_generated_from_text=text)
-    return result
+    return jsonify(data), status
 
 
 @app.route("/episode/<episode_id>/title/comments/<target>", methods=["POST"])

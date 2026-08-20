@@ -1,8 +1,8 @@
 {% macro audio_tag(episode_id, audio_path, standalone, extra_attrs="") %}
 {% if standalone %}
-<audio controls preload="none" {{ extra_attrs }} src="audio/{{ audio_path }}"></audio>
+<audio controls preload="metadata" {{ extra_attrs }} src="audio/{{ audio_path }}"></audio>
 {% else %}
-<audio controls preload="none" {{ extra_attrs }} src="{{ url_for('episode_audio', episode_id=episode_id, filename=audio_path) }}"></audio>
+<audio controls preload="metadata" {{ extra_attrs }} src="{{ url_for('episode_audio', episode_id=episode_id, filename=audio_path) }}"></audio>
 {% endif %}
 {% endmacro %}
 
