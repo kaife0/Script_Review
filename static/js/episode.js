@@ -10,6 +10,23 @@
       .then(r => r.json());
   }
 
+  // ---- URL helpers for locator-addressed resources (row sr_no, "episode", or "chapter:N") ----
+  function commentUrl(locator, target, ...tail) {
+    const suffix = tail.length ? "/" + tail.join("/") : "";
+    if (locator === "episode") return `/episode/${episodeId}/title/comments/${target}${suffix}`;
+    if (String(locator).startsWith("chapter:")) {
+      const n = String(locator).split(":")[1];
+      return `/episode/${episodeId}/chapter/${n}/title/comments/${target}${suffix}`;
+    }
+    return `/episode/${episodeId}/row/${locator}/comments/${target}${suffix}`;
+  }
+
+  function rowOrTitleUrl(locator, suffix) {
+    if (locator === "episode") return `/episode/${episodeId}/title${suffix}`;
+    if (String(locator).startsWith("chapter:")) return `/episode/${episodeId}/chapter/${String(locator).split(":")[1]}/title${suffix}`;
+    return `/episode/${episodeId}/row/${locator}${suffix}`;
+  }
+
   function updateVerifyBar(verified, total) {
     const pct = total ? Math.round((verified / total) * 100) : 0;
     document.getElementById("verify-pct").textContent = pct + "%";
@@ -40,32 +57,42 @@
     });
   });
 
-  // ---- reviewer text autosave ----
+  // ---- reviewer text autosave (rows + titles) ----
   const saveTimers = {};
   document.addEventListener("input", e => {
-    const textarea = e.target.closest('[data-role="reviewer-text"]');
+    const textarea = e.target.closest('[data-role="reviewer-text"], [data-role="title-reviewer-text"]');
     if (!textarea) return;
-    const sr = textarea.dataset.srNo;
-    const state = document.querySelector(`[data-save-state="${sr}"]`);
-    state.textContent = "Saving…";
-    clearTimeout(saveTimers[sr]);
-    saveTimers[sr] = setTimeout(() => {
-      post(`/episode/${episodeId}/row/${sr}/reviewer-text`, { text: textarea.value })
+    const isTitle = textarea.dataset.role === "title-reviewer-text";
+    const locator = isTitle ? textarea.dataset.locator : textarea.dataset.srNo;
+    const saveKey = isTitle ? `title-${locator}` : locator;
+    const state = document.querySelector(`[data-save-state="${saveKey}"]`);
+    if (state) state.textContent = "Saving…";
+    clearTimeout(saveTimers[saveKey]);
+    saveTimers[saveKey] = setTimeout(() => {
+      const url = isTitle ? rowOrTitleUrl(locator, "/reviewer-text") : `/episode/${episodeId}/row/${locator}/reviewer-text`;
+      post(url, { text: textarea.value })
         .then(() => {
+          if (!state) return;
           state.textContent = "Saved";
           setTimeout(() => { state.textContent = ""; }, 1500);
         });
     }, 700);
   });
 
-  // ---- undo / redo / complete ----
+  // ---- undo / redo (rows + titles) / complete (rows only) ----
   document.addEventListener("click", e => {
     const btn = e.target.closest('[data-action="undo"], [data-action="redo"]');
     if (!btn) return;
-    const sr = btn.dataset.srNo;
-    post(`/episode/${episodeId}/row/${sr}/reviewer-text/${btn.dataset.action}`).then(data => {
+    const isTitle = btn.dataset.role === "title";
+    const locator = isTitle ? btn.dataset.locator : btn.dataset.srNo;
+    const url = isTitle ? rowOrTitleUrl(locator, `/reviewer-text/${btn.dataset.action}`)
+                         : `/episode/${episodeId}/row/${locator}/reviewer-text/${btn.dataset.action}`;
+    post(url).then(data => {
       if (!data.ok) return;
-      document.querySelector(`[data-role="reviewer-text"][data-sr-no="${sr}"]`).value = data.text;
+      const selector = isTitle
+        ? `[data-role="title-reviewer-text"][data-locator="${locator}"]`
+        : `[data-role="reviewer-text"][data-sr-no="${locator}"]`;
+      document.querySelector(selector).value = data.text;
     });
   });
 
@@ -86,9 +113,114 @@
   document.addEventListener("click", e => {
     const btn = e.target.closest(".comment-toggle");
     if (!btn) return;
-    const container = btn.closest(".box") || btn.closest(".audio-comment-wrap");
+    const container = btn.closest(".box") || btn.closest(".audio-comment-wrap")
+      || btn.closest(".title-reviewer-block") || btn.closest(".title-pair");
     container.querySelector(".comment-panel").classList.toggle("open");
   });
+
+  // ---- regenerate audio (rows + titles) ----
+  document.addEventListener("click", e => {
+    const btn = e.target.closest('[data-action="regenerate-audio"]');
+    if (!btn) return;
+    const isTitle = btn.dataset.role === "title";
+    const locator = btn.dataset.locator;
+    const url = isTitle ? rowOrTitleUrl(locator, "/regenerate-audio") : `/episode/${episodeId}/row/${locator}/regenerate-audio`;
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = "Regenerating…";
+    post(url).then(data => {
+      btn.disabled = false;
+      btn.textContent = originalText;
+      if (!data.ok) { alert(data.error || "Failed to regenerate audio."); return; }
+      location.reload();
+    });
+  });
+
+  // ---- audio source switch / delete reviewer audio (rows only) ----
+  document.addEventListener("click", e => {
+    const useReviewer = e.target.closest('[data-action="use-reviewer-audio"]');
+    const useTts = e.target.closest('[data-action="use-tts-audio"]');
+    const deleteReviewer = e.target.closest('[data-action="delete-reviewer-audio"]');
+    if (useReviewer) {
+      post(`/episode/${episodeId}/row/${useReviewer.dataset.locator}/audio-source`, { source: "reviewer" })
+        .then(data => { if (data.ok) location.reload(); });
+    }
+    if (useTts) {
+      post(`/episode/${episodeId}/row/${useTts.dataset.locator}/audio-source`, { source: "tts" })
+        .then(data => { if (data.ok) location.reload(); });
+    }
+    if (deleteReviewer) {
+      if (!confirm("Remove the reviewer-recorded audio for this line?")) return;
+      post(`/episode/${episodeId}/row/${deleteReviewer.dataset.locator}/reviewer-audio/delete`)
+        .then(data => { if (data.ok) location.reload(); });
+    }
+  });
+
+  // ---- record / upload reviewer audio ----
+  const activeRecorders = {};
+
+  document.addEventListener("click", async e => {
+    const btn = e.target.closest('[data-action="record-audio"]');
+    if (!btn) return;
+    const locator = btn.dataset.locator;
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      alert("Could not access the microphone.");
+      return;
+    }
+    let recorder;
+    try {
+      recorder = new MediaRecorder(stream);
+    } catch {
+      stream.getTracks().forEach(t => t.stop());
+      alert("Recording isn't supported in this browser.");
+      return;
+    }
+    const chunks = [];
+    recorder.ondataavailable = ev => chunks.push(ev.data);
+    recorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      if (!chunks.length) return;
+      uploadReviewerAudio(locator, new Blob(chunks, { type: recorder.mimeType }));
+    };
+    recorder.start();
+    activeRecorders[locator] = recorder;
+    const indicator = document.querySelector(`.recording-indicator[data-locator="${locator}"]`);
+    if (indicator) indicator.hidden = false;
+  });
+
+  document.addEventListener("click", e => {
+    const btn = e.target.closest('[data-action="stop-recording"]');
+    if (!btn) return;
+    const locator = btn.dataset.locator;
+    if (activeRecorders[locator]) activeRecorders[locator].stop();
+    const indicator = document.querySelector(`.recording-indicator[data-locator="${locator}"]`);
+    if (indicator) indicator.hidden = true;
+  });
+
+  document.addEventListener("change", e => {
+    const input = e.target.closest('[data-role="reviewer-audio-file"]');
+    if (!input || !input.files.length) return;
+    uploadReviewerAudio(input.dataset.locator, input.files[0]);
+  });
+
+  function uploadReviewerAudio(locator, blob) {
+    const body = new FormData();
+    body.set("audio", blob, "recording");
+    fetch(`/episode/${episodeId}/row/${locator}/reviewer-audio`, { method: "POST", body })
+      .then(async r => {
+        let data;
+        try { data = await r.json(); } catch { data = null; }
+        if (!r.ok || !data || !data.ok) {
+          alert((data && data.error) || `Failed to upload audio (status ${r.status}).`);
+          return;
+        }
+        location.reload();
+      })
+      .catch(() => alert("Failed to upload audio: network error."));
+  }
 
   function escapeHtml(s) {
     const div = document.createElement("div");
@@ -97,44 +229,44 @@
   }
 
   // ---- Confluence-style anchored text comments ----
-  function anchorDataEl(sr, target) {
-    return document.querySelector(`.anchor-data[data-sr-no="${sr}"][data-target="${target}"]`);
+  function anchorDataEl(locator, target) {
+    return document.querySelector(`.anchor-data[data-locator="${locator}"][data-target="${target}"]`);
   }
 
-  function anchorDataFor(sr, target) {
-    const el = anchorDataEl(sr, target);
+  function anchorDataFor(locator, target) {
+    const el = anchorDataEl(locator, target);
     if (!el) return [];
     try { return JSON.parse(el.textContent); } catch { return []; }
   }
 
-  function addAnchorData(sr, target, comment) {
-    const el = anchorDataEl(sr, target);
+  function addAnchorData(locator, target, comment) {
+    const el = anchorDataEl(locator, target);
     if (!el) return;
-    const data = anchorDataFor(sr, target);
+    const data = anchorDataFor(locator, target);
     data.push(comment);
     el.textContent = JSON.stringify(data);
   }
 
-  function removeAnchorData(sr, target, commentId) {
-    const el = anchorDataEl(sr, target);
+  function removeAnchorData(locator, target, commentId) {
+    const el = anchorDataEl(locator, target);
     if (!el) return;
-    const data = anchorDataFor(sr, target).filter(c => c.id !== commentId);
+    const data = anchorDataFor(locator, target).filter(c => c.id !== commentId);
     el.textContent = JSON.stringify(data);
   }
 
-  function setAnchorResolved(sr, target, commentId, resolved) {
-    const el = anchorDataEl(sr, target);
+  function setAnchorResolved(locator, target, commentId, resolved) {
+    const el = anchorDataEl(locator, target);
     if (!el) return;
-    const data = anchorDataFor(sr, target);
+    const data = anchorDataFor(locator, target);
     const entry = data.find(c => c.id === commentId);
     if (entry) { entry.resolved = resolved; el.textContent = JSON.stringify(data); }
   }
 
-  function applyHighlights(sr, target) {
-    const box = document.querySelector(`.box-text.anchorable[data-sr-no="${sr}"][data-target="${target}"]`);
+  function applyHighlights(locator, target) {
+    const box = document.querySelector(`.box-text.anchorable[data-locator="${locator}"][data-target="${target}"]`);
     if (!box) return;
     const rawText = box.dataset.rawText;
-    const comments = anchorDataFor(sr, target)
+    const comments = anchorDataFor(locator, target)
       .filter(c => c.anchor)
       .sort((a, b) => a.anchor.start - b.anchor.start);
 
@@ -159,7 +291,7 @@
   }
 
   document.querySelectorAll(".box-text.anchorable").forEach(box => {
-    applyHighlights(box.dataset.srNo, box.dataset.target);
+    applyHighlights(box.dataset.locator, box.dataset.target);
   });
 
   document.addEventListener("click", e => {
@@ -196,7 +328,7 @@
     if (start === -1) { selectionBtn.classList.remove("visible"); return; }
 
     pendingSelection = {
-      sr: box.dataset.srNo, target: box.dataset.target,
+      locator: box.dataset.locator, target: box.dataset.target,
       quote: selectedText, start, end: start + selectedText.length,
     };
 
@@ -208,8 +340,8 @@
 
   selectionBtn.addEventListener("click", () => {
     if (!pendingSelection) return;
-    const { sr, target, quote, start, end } = pendingSelection;
-    const panel = document.querySelector(`.comment-panel[data-sr-no="${sr}"][data-target="${target}"]`);
+    const { locator, target, quote, start, end } = pendingSelection;
+    const panel = document.querySelector(`.comment-panel[data-locator="${locator}"][data-target="${target}"]`);
     panel.classList.add("open");
     const form = panel.querySelector(".comment-new-form.top-level");
     form.querySelector('[name="anchor_quote"]').value = quote;
@@ -256,7 +388,7 @@
     if (!panel) return;
     const threadEl = e.target.closest(".comment-thread");
     if (!threadEl) return;
-    const sr = panel.dataset.srNo, target = panel.dataset.target;
+    const locator = panel.dataset.locator, target = panel.dataset.target;
     const commentId = threadEl.dataset.commentId;
 
     if (e.target.dataset.act === "reply") {
@@ -265,34 +397,34 @@
     }
     if (e.target.dataset.act === "resolve") {
       const resolved = e.target.textContent === "Resolve";
-      post(`/episode/${episodeId}/row/${sr}/comments/${target}/${commentId}/resolve`, { resolved })
+      post(commentUrl(locator, target, commentId, "resolve"), { resolved })
         .then(data => {
           if (!data.ok) return;
           threadEl.classList.toggle("resolved", data.resolved);
           e.target.textContent = data.resolved ? "Reopen" : "Resolve";
-          setAnchorResolved(sr, target, commentId, data.resolved);
+          setAnchorResolved(locator, target, commentId, data.resolved);
           const mark = document.querySelector(`.anchor-mark[data-comment-id="${commentId}"]`);
           if (mark) mark.classList.toggle("resolved-mark", data.resolved);
         });
     }
     if (e.target.dataset.act === "delete") {
       if (!confirm("Delete this comment and all its replies?")) return;
-      post(`/episode/${episodeId}/row/${sr}/comments/${target}/${commentId}/delete`).then(data => {
+      post(commentUrl(locator, target, commentId, "delete")).then(data => {
         if (!data.ok) return;
         threadEl.remove();
         const count = panel.parentElement.querySelector(".comment-toggle .count");
         const next = Math.max(0, parseInt(count.textContent || "0") - 1);
         count.textContent = next;
         count.classList.toggle("zero", next === 0);
-        removeAnchorData(sr, target, commentId);
-        applyHighlights(sr, target);
+        removeAnchorData(locator, target, commentId);
+        applyHighlights(locator, target);
       });
     }
     if (e.target.dataset.act === "delete-reply") {
       if (!confirm("Delete this reply?")) return;
       const replyEl = e.target.closest("[data-reply-id]");
       const replyId = replyEl.dataset.replyId;
-      post(`/episode/${episodeId}/row/${sr}/comments/${target}/${commentId}/reply/${replyId}/delete`)
+      post(commentUrl(locator, target, commentId, "reply", replyId, "delete"))
         .then(data => {
           if (!data.ok) return;
           replyEl.remove();
@@ -305,13 +437,13 @@
     if (!form) return;
     e.preventDefault();
     const panel = form.closest(".comment-panel");
-    const sr = panel.dataset.srNo, target = panel.dataset.target;
+    const locator = panel.dataset.locator, target = panel.dataset.target;
     const input = form.querySelector('input[type="text"]');
     if (!input.value.trim()) return;
 
     if (form.dataset.act === "reply-form") {
       const threadEl = form.closest(".comment-thread");
-      post(`/episode/${episodeId}/row/${sr}/comments/${target}/${threadEl.dataset.commentId}/reply`, { text: input.value })
+      post(commentUrl(locator, target, threadEl.dataset.commentId, "reply"), { text: input.value })
         .then(data => {
           if (!data.ok) return;
           threadEl.querySelector(".comment-replies").insertAdjacentHTML("beforeend", replyHTML(data.reply));
@@ -328,7 +460,7 @@
         payload.anchor_start = anchorStart.value;
         payload.anchor_end = anchorEnd.value;
       }
-      post(`/episode/${episodeId}/row/${sr}/comments/${target}`, payload)
+      post(commentUrl(locator, target), payload)
         .then(data => {
           if (!data.ok) return;
           const wrap = document.createElement("div");
@@ -342,8 +474,8 @@
           count.textContent = parseInt(count.textContent || "0") + 1;
           count.classList.remove("zero");
           if (data.comment.anchor) {
-            addAnchorData(sr, target, data.comment);
-            applyHighlights(sr, target);
+            addAnchorData(locator, target, data.comment);
+            applyHighlights(locator, target);
           }
         });
     }
@@ -407,16 +539,17 @@
         for (const row of data.rows) {
           const slot = document.querySelector(`.audio-strip[data-audio-slot="${row.sr_no}"]`);
           if (!slot) continue;
+          const ttsLane = slot.querySelector('.audio-lane[data-lane="tts"]') || slot;
           const card = slot.closest(".row-card");
           if (row.audio_status === "done" && row.audio_url) {
-            if (!slot.querySelector("audio")) {
-              const placeholder = slot.querySelector(".audio-generating, .no-audio");
+            if (!ttsLane.querySelector("audio")) {
+              const placeholder = ttsLane.querySelector(".audio-generating, .no-audio");
               const audio = document.createElement("audio");
               audio.controls = true;
               audio.preload = "none";
               audio.src = row.audio_url;
               if (placeholder) placeholder.replaceWith(audio);
-              else slot.insertBefore(audio, slot.firstChild.nextSibling);
+              else ttsLane.appendChild(audio);
               if (card) card.dataset.audioStatus = "done";
             }
           } else if (row.audio_status === "failed") {
@@ -435,4 +568,42 @@
     };
     pollAudioStatus();
   }
+
+  // ---- queued playback: when a row's audio finishes, auto-play the next row's primary audio.
+  // Pausing never auto-advances -- only a natural "ended" does. ----
+  function allAudioEls() {
+    return [...document.querySelectorAll(".row-card .audio-strip audio")];
+  }
+
+  function primaryAudioEl(card) {
+    for (const lane of card.querySelectorAll(".audio-strip .audio-lane")) {
+      if (lane.querySelector(".audio-source-badge.is-primary")) {
+        const audio = lane.querySelector("audio");
+        if (audio) return audio;
+      }
+    }
+    return card.querySelector(".audio-strip audio");
+  }
+
+  document.addEventListener("ended", e => {
+    const audio = e.target;
+    if (!(audio instanceof HTMLAudioElement)) return;
+    const card = audio.closest(".row-card");
+    if (!card) return;
+    const cards = [...document.querySelectorAll(".row-card:not([hidden])")];
+    const idx = cards.indexOf(card);
+    for (let i = idx + 1; i < cards.length; i++) {
+      const next = primaryAudioEl(cards[i]);
+      if (next) { next.play(); break; }
+    }
+  }, true);
+
+  // Only one audio plays at a time -- starting one pauses any other still playing.
+  document.addEventListener("play", e => {
+    const audio = e.target;
+    if (!(audio instanceof HTMLAudioElement)) return;
+    for (const other of allAudioEls()) {
+      if (other !== audio && !other.paused) other.pause();
+    }
+  }, true);
 })();

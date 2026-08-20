@@ -85,7 +85,17 @@ def delete_episode(episode_id: str) -> None:
 
 
 def set_episode_title_translation(episode_id: str, translated_title: str, audio_path: str | None) -> None:
-    update_episode(episode_id, translated_title=translated_title, title_audio_path=audio_path)
+    update_episode(
+        episode_id,
+        translated_title=translated_title,
+        title_audio_path=audio_path,
+        title_reviewer_text=translated_title,
+        title_reviewer_history=[],
+        title_reviewer_history_index=-1,
+        title_comments={t: [] for t in TITLE_COMMENT_TARGETS},
+        title_audio_status="done" if audio_path else "pending",
+        title_audio_generated_from_text=translated_title if audio_path else None,
+    )
 
 
 def chapter_rows_reviewed(chapter: dict) -> bool:
@@ -144,8 +154,9 @@ def verification_counts(episode_id: str) -> tuple[int, int]:
 
 
 def audio_statuses(episode_id: str) -> list[dict]:
-    """Lightweight per-row audio state (sr_no, audio_status, audio_path) for
-    polling while TTS still runs in the background, without fetching full rows."""
+    """Lightweight per-row audio state for polling while TTS still runs in the
+    background, without fetching full rows. Includes the reviewer-audio lane
+    fields so pollers can avoid clobbering a reviewer's uploaded take."""
     pipeline = [
         {"$match": {"_id": ObjectId(episode_id)}},
         {"$project": {"rows": {"$reduce": {
@@ -154,7 +165,9 @@ def audio_statuses(episode_id: str) -> list[dict]:
         }}}},
         {"$unwind": "$rows"},
         {"$replaceRoot": {"newRoot": "$rows"}},
-        {"$project": {"_id": 0, "sr_no": 1, "audio_status": 1, "audio_path": 1}},
+        {"$project": {"_id": 0, "sr_no": 1, "audio_status": 1, "audio_path": 1,
+                       "reviewer_audio_path": 1, "reviewer_audio_status": 1,
+                       "audio_source": 1, "audio_generated_from_text": 1, "reviewer_text": 1}},
     ]
     return list(episodes_collection().aggregate(pipeline))
 
@@ -164,15 +177,32 @@ def audio_statuses(episode_id: str) -> list[dict]:
 from core.db_rows import (  # noqa: E402
     COMMENT_TARGETS,
     ANCHORABLE_COMMENT_TARGETS,
+    TITLE_COMMENT_TARGETS,
     update_row,
     get_row,
     set_reviewer_text,
     move_reviewer_history,
     set_reviewer_complete,
+    set_row_audio,
+    set_reviewer_audio,
+    clear_reviewer_audio,
+    set_audio_source,
     add_comment,
     add_comment_reply,
     set_comment_resolved,
     delete_comment,
     delete_comment_reply,
     set_chapter_title_translation,
+    get_chapter_title,
+    set_chapter_reviewer_text,
+    move_chapter_reviewer_history,
+    set_chapter_title_audio,
+    set_episode_reviewer_text,
+    move_episode_reviewer_history,
+    set_episode_title_audio,
+    add_title_comment,
+    add_title_comment_reply,
+    set_title_comment_resolved,
+    delete_title_comment,
+    delete_title_comment_reply,
 )

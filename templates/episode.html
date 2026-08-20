@@ -149,11 +149,12 @@
   .save-state { font-size: 0.7rem; color: var(--text-muted); margin-left: auto; }
 
   /* ---- Audio strip, full width under the row ---- */
-  .audio-strip { display: flex; align-items: center; gap: 0.9rem; padding: 0.7rem 1rem;
-    border-top: 1px solid var(--border); background: #fcfcfd; flex-wrap: wrap; }
+  .audio-strip { display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem; padding: 0.7rem 1rem;
+    border-top: 1px solid var(--border); background: #fcfcfd; }
   .audio-strip .strip-label { font-size: 0.67rem; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.05em; color: var(--text-muted); white-space: nowrap; }
   .audio-strip audio { flex: 1; min-width: 260px; max-width: 560px; height: 34px; }
+  .audio-lane { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
   .no-audio { color: var(--text-muted); font-size: 0.82rem; font-style: italic; }
   .audio-generating { display: inline-flex; align-items: center; gap: 0.45rem; color: var(--text-muted);
     font-size: 0.82rem; font-style: italic; }
@@ -201,6 +202,23 @@
   .comment-new-form input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
   .comment-new-form button { background: var(--primary); color: #fff; border: none; border-radius: 6px;
     padding: 0.35rem 0.7rem; font-size: 0.76rem; font-weight: 600; cursor: pointer; }
+
+  /* ---- dual-lane audio (TTS + reviewer) ---- */
+  .audio-source-badge { font-size: 0.67rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 0.18rem 0.5rem; border-radius: 999px; background: #e5e7eb; color: var(--text-muted);
+    white-space: nowrap; }
+  .audio-source-badge.is-primary { background: #e0e7ff; color: var(--primary-dark); }
+  .audio-source-badge.reviewer.is-primary { background: #dcfce7; color: #15803d; }
+  .stale-audio-badge { font-size: 0.7rem; color: #c2410c; font-style: italic; margin-left: 0.4rem; }
+  .reviewer-audio-controls { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.5rem; }
+  .file-upload-label { cursor: pointer; }
+  .recording-indicator { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem;
+    color: #b91c1c; font-weight: 600; }
+  .recording-indicator[hidden] { display: none; }
+  .recording-indicator button { background: none; border: 1px solid #b91c1c; color: #b91c1c; border-radius: 6px;
+    padding: 0.15rem 0.5rem; font-size: 0.72rem; cursor: pointer; }
+
+  .title-reviewer-block { margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px dashed var(--border); }
 
   @media (max-width: 1150px) {
     .boxes { grid-template-columns: 1fr; }
@@ -274,17 +292,54 @@
   </div>
   {% endif %}
 
-  <div class="episode-title-block">
-    <div class="title-pair">
-      <div class="en">English Title</div>
-      <div class="orig">{{ episode.title }}</div>
+  <div class="episode-title-block" style="flex-direction:column; align-items:stretch;">
+    <div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:center;">
+      <div class="title-pair">
+        <div class="en">English Title
+          {% if not standalone %}{{ comments.comment_toggle('english', title_comments(episode, 'english')) }}{% endif %}
+        </div>
+        {% if not standalone %}
+          <div class="orig box-text anchorable" data-locator="episode" data-target="english" data-raw-text="{{ episode.title }}">{{ episode.title }}</div>
+          <script type="application/json" class="anchor-data" data-locator="episode" data-target="english">{{ title_comments(episode, 'english') | selectattr('anchor') | list | tojson }}</script>
+          {{ comments.comment_panel('english', title_comments(episode, 'english'), 'episode') }}
+        {% else %}
+          <div class="orig">{{ episode.title }}</div>
+        {% endif %}
+      </div>
+      <div class="title-pair">
+        <div class="en">{{ episode.target_lang_name }} Title
+          {% if not standalone %}{{ comments.comment_toggle('ai_translation', title_comments(episode, 'ai_translation')) }}{% endif %}
+        </div>
+        {% if not standalone %}
+          <div class="tr box-text anchorable" data-locator="episode" data-target="ai_translation" data-raw-text="{{ episode.translated_title or episode.title }}">{{ episode.translated_title or episode.title }}</div>
+          <script type="application/json" class="anchor-data" data-locator="episode" data-target="ai_translation">{{ title_comments(episode, 'ai_translation') | selectattr('anchor') | list | tojson }}</script>
+          {{ comments.comment_panel('ai_translation', title_comments(episode, 'ai_translation'), 'episode') }}
+        {% else %}
+          <div class="tr">{{ episode.translated_title or episode.title }}</div>
+        {% endif %}
+      </div>
+      {% if episode.title_audio_path %}
+        {{ macros.audio_tag(episode._id, episode.title_audio_path, standalone, 'style="width:240px"') }}
+      {% endif %}
     </div>
-    <div class="title-pair">
-      <div class="en">{{ episode.target_lang_name }} Title</div>
-      <div class="tr">{{ episode.translated_title or episode.title }}</div>
+    {% if not standalone %}
+    <div class="title-reviewer-block">
+      <div class="box-label">
+        Reviewer's Edit
+        {{ comments.comment_toggle('reviewer_edit', title_comments(episode, 'reviewer_edit')) }}
+      </div>
+      <textarea class="reviewer-textarea" data-locator="episode" data-role="title-reviewer-text">{{ episode.title_reviewer_text or episode.translated_title or episode.title }}</textarea>
+      <div class="reviewer-controls">
+        <button type="button" class="btn btn-secondary btn-sm" data-action="undo" data-role="title" data-locator="episode">&#8630; Undo</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-action="redo" data-role="title" data-locator="episode">&#8631; Redo</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-action="regenerate-audio" data-role="title" data-locator="episode">Regenerate audio</button>
+        {% if episode.title_audio_path and episode.title_reviewer_text != episode.title_audio_generated_from_text %}
+          <span class="stale-audio-badge">Audio may be outdated</span>
+        {% endif %}
+        <span class="save-state" data-save-state="title-episode"></span>
+      </div>
+      {{ comments.comment_panel('reviewer_edit', title_comments(episode, 'reviewer_edit'), 'episode') }}
     </div>
-    {% if episode.title_audio_path %}
-      {{ macros.audio_tag(episode._id, episode.title_audio_path, standalone, 'style="width:240px"') }}
     {% endif %}
   </div>
 
@@ -303,6 +358,47 @@
       </div>
       {% endif %}
     </div>
+
+    {% if not standalone %}
+    {% set chapter_locator = 'chapter:' ~ chapter.chapter_number %}
+    <div class="episode-title-block" style="flex-direction:column; align-items:stretch; margin-top:-0.5rem;">
+      <div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:center;">
+        <div class="title-pair">
+          <div class="en">Chapter Title (English)
+            {{ comments.comment_toggle('english', title_comments(chapter, 'english')) }}
+          </div>
+          <div class="orig box-text anchorable" data-locator="{{ chapter_locator }}" data-target="english" data-raw-text="{{ chapter.title }}">{{ chapter.title }}</div>
+          <script type="application/json" class="anchor-data" data-locator="{{ chapter_locator }}" data-target="english">{{ title_comments(chapter, 'english') | selectattr('anchor') | list | tojson }}</script>
+          {{ comments.comment_panel('english', title_comments(chapter, 'english'), chapter_locator) }}
+        </div>
+        <div class="title-pair">
+          <div class="en">Chapter Title ({{ episode.target_lang_name }})
+            {{ comments.comment_toggle('ai_translation', title_comments(chapter, 'ai_translation')) }}
+          </div>
+          <div class="tr box-text anchorable" data-locator="{{ chapter_locator }}" data-target="ai_translation" data-raw-text="{{ chapter.translated_title or chapter.title }}">{{ chapter.translated_title or chapter.title }}</div>
+          <script type="application/json" class="anchor-data" data-locator="{{ chapter_locator }}" data-target="ai_translation">{{ title_comments(chapter, 'ai_translation') | selectattr('anchor') | list | tojson }}</script>
+          {{ comments.comment_panel('ai_translation', title_comments(chapter, 'ai_translation'), chapter_locator) }}
+        </div>
+      </div>
+      <div class="title-reviewer-block">
+        <div class="box-label">
+          Reviewer's Edit
+          {{ comments.comment_toggle('reviewer_edit', title_comments(chapter, 'reviewer_edit')) }}
+        </div>
+        <textarea class="reviewer-textarea" data-locator="{{ chapter_locator }}" data-role="title-reviewer-text">{{ chapter.title_reviewer_text or chapter.translated_title or chapter.title }}</textarea>
+        <div class="reviewer-controls">
+          <button type="button" class="btn btn-secondary btn-sm" data-action="undo" data-role="title" data-locator="{{ chapter_locator }}">&#8630; Undo</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="redo" data-role="title" data-locator="{{ chapter_locator }}">&#8631; Redo</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="regenerate-audio" data-role="title" data-locator="{{ chapter_locator }}">Regenerate audio</button>
+          {% if chapter.title_audio_path and chapter.title_reviewer_text != chapter.title_audio_generated_from_text %}
+            <span class="stale-audio-badge">Audio may be outdated</span>
+          {% endif %}
+          <span class="save-state" data-save-state="title-{{ chapter_locator }}"></span>
+        </div>
+        {{ comments.comment_panel('reviewer_edit', title_comments(chapter, 'reviewer_edit'), chapter_locator) }}
+      </div>
+    </div>
+    {% endif %}
 
     <div class="rows">
       {% for row in chapter.rows %}
@@ -336,13 +432,13 @@
           <div class="box">
             <div class="box-label">
               English
-              {% if not standalone %}{{ comments.comment_toggle('english', row) }}{% endif %}
+              {% if not standalone %}{{ comments.comment_toggle('english', row.comments.english) }}{% endif %}
             </div>
             {% if not standalone %}
-              <div class="box-text anchorable" data-sr-no="{{ row.sr_no }}" data-target="english"
+              <div class="box-text anchorable" data-locator="{{ row.sr_no }}" data-target="english"
                    data-raw-text="{{ row.english }}">{{ row.english }}</div>
-              <script type="application/json" class="anchor-data" data-sr-no="{{ row.sr_no }}" data-target="english">{{ row.comments.english | selectattr('anchor') | list | tojson }}</script>
-              {{ comments.comment_panel('english', row, episode._id) }}
+              <script type="application/json" class="anchor-data" data-locator="{{ row.sr_no }}" data-target="english">{{ row.comments.english | selectattr('anchor') | list | tojson }}</script>
+              {{ comments.comment_panel('english', row.comments.english, row.sr_no) }}
             {% else %}
               <div class="box-text">{{ row.english }}</div>
             {% endif %}
@@ -351,13 +447,13 @@
           <div class="box">
             <div class="box-label">
               AI Translated
-              {% if not standalone %}{{ comments.comment_toggle('ai_translation', row) }}{% endif %}
+              {% if not standalone %}{{ comments.comment_toggle('ai_translation', row.comments.ai_translation) }}{% endif %}
             </div>
             {% if not standalone %}
-              <div class="box-text italian anchorable" data-sr-no="{{ row.sr_no }}" data-target="ai_translation"
+              <div class="box-text italian anchorable" data-locator="{{ row.sr_no }}" data-target="ai_translation"
                    data-raw-text="{{ row.translated }}">{{ row.translated }}</div>
-              <script type="application/json" class="anchor-data" data-sr-no="{{ row.sr_no }}" data-target="ai_translation">{{ row.comments.ai_translation | selectattr('anchor') | list | tojson }}</script>
-              {{ comments.comment_panel('ai_translation', row, episode._id) }}
+              <script type="application/json" class="anchor-data" data-locator="{{ row.sr_no }}" data-target="ai_translation">{{ row.comments.ai_translation | selectattr('anchor') | list | tojson }}</script>
+              {{ comments.comment_panel('ai_translation', row.comments.ai_translation, row.sr_no) }}
             {% else %}
               <div class="box-text italian">{{ row.translated }}</div>
             {% endif %}
@@ -366,7 +462,7 @@
           <div class="box">
             <div class="box-label">
               Reviewer's Edit
-              {% if not standalone %}{{ comments.comment_toggle('reviewer_edit', row) }}{% endif %}
+              {% if not standalone %}{{ comments.comment_toggle('reviewer_edit', row.comments.reviewer_edit) }}{% endif %}
             </div>
             {% if standalone %}
               <div class="box-text italian">{{ row.reviewer_text }}</div>
@@ -380,9 +476,13 @@
                         data-complete="{{ 'true' if row.reviewer_complete else 'false' }}">
                   {% if row.reviewer_complete %}&#10003; Complete{% else %}Mark complete{% endif %}
                 </button>
+                <button type="button" class="btn btn-secondary btn-sm" data-action="regenerate-audio" data-locator="{{ row.sr_no }}">Regenerate audio</button>
+                {% if row.audio_path and row.reviewer_text != row.audio_generated_from_text %}
+                  <span class="stale-audio-badge">Audio may be outdated</span>
+                {% endif %}
                 <span class="save-state" data-save-state="{{ row.sr_no }}"></span>
               </div>
-              {{ comments.comment_panel('reviewer_edit', row, episode._id) }}
+              {{ comments.comment_panel('reviewer_edit', row.comments.reviewer_edit, row.sr_no) }}
             {% endif %}
 
             <div class="difficult-words">
@@ -407,22 +507,26 @@
 
         <div class="audio-strip" data-audio-slot="{{ row.sr_no }}">
           <span class="strip-label">{{ episode.target_lang_name }} audio</span>
-          {% if row.audio_path %}
-            {{ macros.audio_tag(episode._id, row.audio_path, standalone) }}
-          {% elif not standalone and audio_in_progress and row.audio_status not in ("done", "failed") %}
-            <span class="audio-generating"><span class="mini-spinner"></span>Generating audio&hellip;</span>
-          {% elif row.audio_status == "failed" %}
-            <span class="no-audio">audio failed</span>
-          {% else %}
-            <span class="no-audio">no audio</span>
-          {% endif %}
+          {{ macros.row_audio_strip(episode._id, row, standalone,
+                                     tts_generating=(not standalone and audio_in_progress and row.audio_status not in ("done", "failed")),
+                                     tts_failed=(row.audio_status == "failed")) }}
           {% if not standalone %}
+          <div class="reviewer-audio-controls" data-locator="{{ row.sr_no }}">
+            <button type="button" class="btn btn-secondary btn-sm" data-action="record-audio" data-locator="{{ row.sr_no }}">🎙 Record</button>
+            <label class="btn btn-secondary btn-sm file-upload-label">
+              Upload audio
+              <input type="file" accept="audio/*" hidden data-role="reviewer-audio-file" data-locator="{{ row.sr_no }}">
+            </label>
+            <span class="recording-indicator" data-locator="{{ row.sr_no }}" hidden>Recording&hellip;
+              <button type="button" data-action="stop-recording" data-locator="{{ row.sr_no }}">Stop</button>
+            </span>
+          </div>
           <div class="audio-comment-wrap">
             <div class="box-label" style="margin-bottom:0.3rem;">
               Audio notes
-              {{ comments.comment_toggle('audio', row) }}
+              {{ comments.comment_toggle('audio', row.comments.audio) }}
             </div>
-            {{ comments.comment_panel('audio', row, episode._id) }}
+            {{ comments.comment_panel('audio', row.comments.audio, row.sr_no) }}
           </div>
           {% endif %}
         </div>

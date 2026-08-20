@@ -5,3 +5,41 @@
 <audio controls preload="none" {{ extra_attrs }} src="{{ url_for('episode_audio', episode_id=episode_id, filename=audio_path) }}"></audio>
 {% endif %}
 {% endmacro %}
+
+{% macro row_audio_strip(episode_id, row, standalone, tts_generating=False, tts_failed=False) %}
+{% set source = row.audio_source or 'tts' %}
+{% if standalone %}
+  {% set primary_path = row.reviewer_audio_path if source == 'reviewer' and row.reviewer_audio_path else row.audio_path %}
+  {% if primary_path %}
+    {{ audio_tag(episode_id, primary_path, standalone) }}
+  {% endif %}
+{% else %}
+  <div class="audio-lane" data-lane="tts">
+    <span class="audio-source-badge tts {{ 'is-primary' if source == 'tts' }}">AI narration{{ ' (primary)' if source == 'tts' }}</span>
+    {% if row.audio_path %}
+      {{ audio_tag(episode_id, row.audio_path, standalone) }}
+      {% if source != 'tts' %}
+        <button type="button" class="btn btn-secondary btn-sm" data-action="use-tts-audio" data-locator="{{ row.sr_no }}">Use as primary</button>
+      {% endif %}
+    {% elif tts_generating %}
+      <span class="audio-generating"><span class="mini-spinner"></span>Generating audio&hellip;</span>
+    {% elif tts_failed %}
+      <span class="no-audio">audio failed</span>
+    {% else %}
+      <span class="no-audio">no audio</span>
+    {% endif %}
+  </div>
+  <div class="audio-lane" data-lane="reviewer">
+    <span class="audio-source-badge reviewer {{ 'is-primary' if source == 'reviewer' }}">Reviewer audio{{ ' (primary)' if source == 'reviewer' }}</span>
+    {% if row.reviewer_audio_path %}
+      {{ audio_tag(episode_id, row.reviewer_audio_path, standalone) }}
+      {% if source != 'reviewer' %}
+        <button type="button" class="btn btn-secondary btn-sm" data-action="use-reviewer-audio" data-locator="{{ row.sr_no }}">Use as primary</button>
+      {% endif %}
+      <button type="button" class="btn btn-secondary btn-sm" data-action="delete-reviewer-audio" data-locator="{{ row.sr_no }}">Remove</button>
+    {% else %}
+      <span class="no-audio">not recorded</span>
+    {% endif %}
+  </div>
+{% endif %}
+{% endmacro %}

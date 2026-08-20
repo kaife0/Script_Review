@@ -173,15 +173,17 @@ def _run_tts_stage(episode_id: str, episode: dict) -> dict:
                 episode_id, len(pending_rows), sum(len(c["rows"]) for c in episode["chapters"]))
 
     def _synthesize_row(row: dict) -> None:
-        text = row["translated"].strip()
+        text = row["reviewer_text"].strip()
         if not text:
-            db.update_row(episode_id, row["sr_no"], audio_status="done", audio_path=None)
+            db.set_row_audio(episode_id, row["sr_no"], audio_path=None, audio_status="done",
+                              audio_generated_from_text=text)
             return
         voice = casting[row["speaker"]]
         audio_bytes = backend.synthesize(text, voice, voice_lang)
         filename = f"row_{row['sr_no']}.mp3"
         storage.save_bytes(episode_id, f"audio/{filename}", audio_bytes)
-        db.update_row(episode_id, row["sr_no"], audio_status="done", audio_path=filename)
+        db.set_row_audio(episode_id, row["sr_no"], audio_path=filename, audio_status="done",
+                          audio_generated_from_text=text)
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {pool.submit(_synthesize_row, row): row for row in pending_rows}
@@ -199,6 +201,48 @@ def _run_tts_stage(episode_id: str, episode: dict) -> dict:
 
     logger.info("episode %s: audio synthesis complete", episode_id)
     return db.get_episode(episode_id)
+
+
+def synthesize_row_audio(episode_id: str, target_lang: str, row: dict,
+                          speakers: list[str]) -> tuple[str | None, str]:
+    """Synchronously (re)synthesize one row's TTS audio from its current reviewer_text.
+    Returns (audio_path, audio_status). Raises on backend failure -- the caller (app.py's
+    regenerate-audio route) does NOT mark audio_status 'failed' on exception, so a
+    previously-working take isn't clobbered by a flaky retry.
+
+    `speakers` must be the full, ordered, de-duplicated speaker list for the episode (the
+    same list _run_tts_stage derives), not just [row['speaker']] -- cast_voices assigns
+    voices by position-in-list, so passing a single-speaker list here would silently pick a
+    different voice than the one originally used for that speaker in the full episode.
+    """
+    voice_lang = voice_key(target_lang)
+    backend = get_backend()
+    voice = cast_voices(voice_lang, speakers)[row["speaker"]]
+    text = row["reviewer_text"].strip()
+    if not text:
+        db.set_row_audio(episode_id, row["sr_no"], audio_path=None, audio_status="done",
+                          audio_generated_from_text=text)
+        return None, "done"
+    audio_bytes = backend.synthesize(text, voice, voice_lang)
+    filename = f"row_{row['sr_no']}.mp3"
+    storage.save_bytes(episode_id, f"audio/{filename}", audio_bytes)
+    db.set_row_audio(episode_id, row["sr_no"], audio_path=filename, audio_status="done",
+                      audio_generated_from_text=text)
+    return filename, "done"
+
+
+def synthesize_title_audio(target_lang: str, text: str) -> bytes | None:
+    """Synchronously (re)synthesize narrator audio for one title's current text. Returns
+    raw mp3 bytes, or None if there's no TTS backend for this language or the text is blank.
+    Raises on backend failure. Caller picks the filename and calls storage.save_bytes +
+    db.set_episode_title_audio / db.set_chapter_title_audio itself.
+    """
+    if not has_tts_backend(target_lang) or not text.strip():
+        return None
+    voice_lang = voice_key(target_lang)
+    backend = get_backend()
+    narrator_voice = cast_voices(voice_lang, [NARRATOR_VOICE_TARGET])[NARRATOR_VOICE_TARGET]
+    return backend.synthesize(text, narrator_voice, voice_lang)
 
 
 def run_pipeline(episode_id: str) -> None:

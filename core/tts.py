@@ -13,6 +13,23 @@ _sherpa_engine_cache: dict[str, object] = {}
 _sherpa_engine_lock = threading.Lock()
 
 
+def transcode_to_mp3(raw_bytes: bytes, filename_hint: str = "upload") -> bytes:
+    """Transcode arbitrary browser-recorded/uploaded audio (webm/ogg/wav/mp3/m4a) to mp3 via
+    ffmpeg, for consistent playback and standalone HTML export. Raises
+    subprocess.CalledProcessError on unreadable/corrupt input."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        src_path = os.path.join(tmp_dir, filename_hint)
+        out_path = os.path.join(tmp_dir, "out.mp3")
+        with open(src_path, "wb") as f:
+            f.write(raw_bytes)
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", src_path, "-codec:a", "libmp3lame", "-qscale:a", "4", out_path],
+            check=True, capture_output=True,
+        )
+        with open(out_path, "rb") as f:
+            return f.read()
+
+
 class TTSBackend:
     """Common interface every TTS backend implements."""
 

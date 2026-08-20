@@ -1,13 +1,11 @@
-{% macro comment_toggle(target, row) %}
-{% set thread = row.comments[target] %}
+{% macro comment_toggle(target, thread) %}
 <button type="button" class="comment-toggle" title="Comments">
   💬 <span class="count {{ 'zero' if not thread }}">{{ thread | length }}</span>
 </button>
 {% endmacro %}
 
-{% macro comment_panel(target, row, episode_id) %}
-{% set thread = row.comments[target] %}
-<div class="comment-panel" data-sr-no="{{ row.sr_no }}" data-target="{{ target }}">
+{% macro comment_panel(target, thread, locator) %}
+<div class="comment-panel" data-locator="{{ locator }}" data-target="{{ target }}">
   <div class="comment-thread-list">
     {% for c in thread %}
     <div class="comment-thread {{ 'resolved' if c.resolved }}" data-comment-id="{{ c.id }}">

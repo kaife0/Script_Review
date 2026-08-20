@@ -57,6 +57,21 @@ def list_files(episode_id: str, prefix: str) -> list[str]:
     return os.listdir(dir_path)
 
 
+def delete_file(episode_id: str, relative_path: str) -> None:
+    """Remove a single file (e.g. a reviewer-audio recording) without touching the rest of
+    the episode's files. Idempotent -- silently no-ops if the file doesn't exist."""
+    if using_gcs():
+        blob = _bucket_client().blob(f"{episode_id}/{relative_path}")
+        try:
+            blob.delete()
+        except Exception:
+            pass
+        return
+    full_path = os.path.join(_LOCAL_ROOT, episode_id, relative_path)
+    if os.path.isfile(full_path):
+        os.remove(full_path)
+
+
 def delete_episode_files(episode_id: str) -> None:
     """Remove every uploaded/generated file for this episode."""
     if using_gcs():
