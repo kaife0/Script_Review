@@ -63,7 +63,7 @@ def _run_parse_stage(episode_id: str, episode: dict) -> dict:
 
     chapters = _rows_to_chapters(parsed)
     db.set_episode_chapters(episode_id, chapters)
-    db.update_episode(episode_id, title=parsed["title"], translated_title=None, title_audio_path=None)
+    db.update_episode(episode_id, translated_title=None, title_audio_path=None)
     if parsed["warnings"]:
         db.update_episode(episode_id, alignment_warnings=parsed["warnings"])
 
