@@ -550,6 +550,90 @@
   updateStickyOffsets();
   window.addEventListener("resize", updateStickyOffsets);
 
+  // ---- skip buttons + spacebar/arrow-key playback controls ----
+  function buildSkipControls() {
+    const span = document.createElement("span");
+    span.className = "audio-skip-controls";
+    span.innerHTML =
+      '<button type="button" class="audio-skip-btn" data-skip="-10" title="Back 10s">&laquo;10</button>' +
+      '<button type="button" class="audio-skip-btn" data-skip="-5" title="Back 5s">&lsaquo;5</button>' +
+      '<button type="button" class="audio-skip-btn" data-skip="5" title="Forward 5s">5&rsaquo;</button>' +
+      '<button type="button" class="audio-skip-btn" data-skip="10" title="Forward 10s">10&raquo;</button>';
+    return span;
+  }
+
+  function seek(audio, deltaSeconds) {
+    if (!audio) return;
+    const max = isFinite(audio.duration) ? audio.duration : Infinity;
+    const wasPlaying = !audio.paused;
+    audio.currentTime = Math.min(Math.max(audio.currentTime + deltaSeconds, 0), max);
+    // Some browsers pause playback momentarily while currentTime is being applied
+    // (readyState drops below HAVE_FUTURE_DATA); re-assert play so a skip while
+    // playing never leaves the track sitting paused at the new position.
+    if (wasPlaying && audio.paused) audio.play();
+  }
+
+  document.addEventListener("click", e => {
+    const btn = e.target.closest(".audio-skip-btn");
+    if (!btn) return;
+    const audio = btn.closest(".audio-player")?.querySelector("audio");
+    seek(audio, Number(btn.dataset.skip));
+    if (audio) setActiveAudio(audio);
+  });
+
+  // ---- track which audio player keyboard shortcuts apply to: the last one played,
+  // clicked, or focused. Falls back to whichever is currently playing. ----
+  let activeAudio = null;
+
+  function setActiveAudio(audio) {
+    if (activeAudio) activeAudio.closest(".audio-player")?.classList.remove("is-active-audio");
+    activeAudio = audio;
+    if (activeAudio) activeAudio.closest(".audio-player")?.classList.add("is-active-audio");
+  }
+
+  document.addEventListener("play", e => {
+    if (e.target instanceof HTMLAudioElement) setActiveAudio(e.target);
+  }, true);
+
+  document.addEventListener("click", e => {
+    const audio = e.target.closest(".audio-player")?.querySelector("audio");
+    if (audio) setActiveAudio(audio);
+  });
+
+  function isTypingTarget(el) {
+    if (!el) return false;
+    const tag = el.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+  }
+
+  // Capture phase + stopImmediatePropagation: when the <audio> element itself (or its native
+  // controls) has focus -- which happens as soon as you click play -- the browser's own
+  // built-in space/arrow handling fires too and fights with ours (toggling play back on right
+  // after we pause it, or double-seeking). Intercepting on the capture phase and stopping the
+  // event here means only our handler runs, whether or not an <audio> has focus. Plain
+  // <button> elements are excluded so Space still activates a focused button normally.
+  document.addEventListener("keydown", e => {
+    if (isTypingTarget(document.activeElement)) return;
+    if (document.activeElement && document.activeElement.tagName === "BUTTON") return;
+    if (e.code !== "Space" && e.code !== "ArrowRight" && e.code !== "ArrowLeft") return;
+
+    let audio = document.activeElement instanceof HTMLAudioElement ? document.activeElement : null;
+    if (!audio) audio = activeAudio && document.contains(activeAudio) ? activeAudio : null;
+    if (!audio) audio = allAudioEls().find(a => !a.paused) || allAudioEls()[0];
+    if (!audio) return;
+
+    e.preventDefault();
+    e.stopImmediatePropagation();
+
+    if (e.code === "Space") {
+      if (audio.paused) audio.play(); else audio.pause();
+    } else if (e.code === "ArrowRight") {
+      seek(audio, e.shiftKey ? 10 : 5);
+    } else if (e.code === "ArrowLeft") {
+      seek(audio, e.shiftKey ? -10 : -5);
+    }
+  }, true);
+
   // ---- fill in audio as it finishes generating in the background ----
   if (audioInProgress) {
     const pollAudioStatus = () => {
@@ -563,12 +647,16 @@
           if (row.audio_status === "done" && row.audio_url) {
             if (!ttsLane.querySelector("audio")) {
               const placeholder = ttsLane.querySelector(".audio-generating, .no-audio");
+              const wrap = document.createElement("span");
+              wrap.className = "audio-player";
               const audio = document.createElement("audio");
               audio.controls = true;
-              audio.preload = "none";
+              audio.preload = "metadata";
               audio.src = row.audio_url;
-              if (placeholder) placeholder.replaceWith(audio);
-              else ttsLane.appendChild(audio);
+              wrap.appendChild(audio);
+              wrap.appendChild(buildSkipControls());
+              if (placeholder) placeholder.replaceWith(wrap);
+              else ttsLane.appendChild(wrap);
               if (card) card.dataset.audioStatus = "done";
             }
           } else if (row.audio_status === "failed") {
@@ -591,7 +679,7 @@
   // ---- queued playback: when a row's audio finishes, auto-play the next row's primary audio.
   // Pausing never auto-advances -- only a natural "ended" does. ----
   function allAudioEls() {
-    return [...document.querySelectorAll(".row-card .audio-strip audio")];
+    return [...document.querySelectorAll(".audio-player audio")];
   }
 
   function primaryAudioEl(card) {

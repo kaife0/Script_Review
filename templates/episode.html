@@ -154,6 +154,13 @@
   .audio-strip .strip-label { font-size: 0.67rem; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.05em; color: var(--text-muted); white-space: nowrap; }
   .audio-strip audio { flex: 1; min-width: 260px; max-width: 560px; height: 34px; }
+  .audio-player { display: inline-flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; flex: 1; min-width: 260px; }
+  .audio-skip-controls { display: inline-flex; gap: 0.2rem; }
+  .audio-skip-btn { background: var(--surface); border: 1px solid var(--border); color: var(--text-muted);
+    border-radius: 6px; padding: 0.2rem 0.4rem; font-size: 0.7rem; font-weight: 600; cursor: pointer;
+    line-height: 1.2; }
+  .audio-skip-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+  .audio-player.is-active-audio .audio-skip-btn { border-color: var(--primary); }
   .audio-lane { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
   .no-audio { color: var(--text-muted); font-size: 0.82rem; font-style: italic; }
   .audio-generating { display: inline-flex; align-items: center; gap: 0.45rem; color: var(--text-muted);
@@ -287,7 +294,7 @@
       <span class="item"><span class="swatch" style="background:var(--narrator)"></span>Narrator line</span>
       <span class="item"><span class="swatch" style="background:var(--green)"></span>Verified</span>
       <span class="sep"></span>
-      <span class="item hint"><strong>Complete</strong>&nbsp;= text edit finished &nbsp;·&nbsp; <strong>Verified</strong>&nbsp;= whole line signed off</span>
+      <span class="item hint"><strong>Complete</strong>&nbsp;= reviewer's text edit is finished &nbsp;·&nbsp; <strong>Verified</strong>&nbsp;= the whole line (text, audio &amp; comments) is fully checked and signed off</span>
     </div>
   </div>
   {% endif %}
@@ -418,7 +425,8 @@
             {% if row.review_flag == 'note' %}<span class="pill note">note</span>{% endif %}
             {% if row.speaker.lower() == 'narrator' %}<span class="pill narrator">narrator</span>{% endif %}
             {% if not standalone %}
-            <span class="pill status-pill {{ 'verified' if row.human_verified else 'pending' }}">
+            <span class="pill status-pill {{ 'verified' if row.human_verified else 'pending' }}"
+                  title="Verified means this entire line — translated text, reviewer edits, audio, and comments — has been fully checked and signed off.">
               {{ 'Verified' if row.human_verified else 'Needs review' }}
             </span>
             {% endif %}
@@ -426,7 +434,8 @@
           {% if not standalone %}
           <button type="button" class="verify-toggle btn btn-sm {{ 'btn-secondary' if not row.human_verified }}"
                   data-sr-no="{{ row.sr_no }}"
-                  data-verified="{{ 'true' if row.human_verified else 'false' }}">
+                  data-verified="{{ 'true' if row.human_verified else 'false' }}"
+                  title="Mark this whole line — text, audio, and comments — as fully reviewed and signed off.">
             {% if row.human_verified %}&#10003; Verified{% else %}Mark verified{% endif %}
           </button>
           {% endif %}
@@ -462,7 +471,8 @@
                 <button type="button" class="btn btn-secondary btn-sm" data-action="redo" data-sr-no="{{ row.sr_no }}">&#8631; Redo</button>
                 <button type="button" class="complete-toggle {{ 'done' if row.reviewer_complete }}"
                         data-sr-no="{{ row.sr_no }}"
-                        data-complete="{{ 'true' if row.reviewer_complete else 'false' }}">
+                        data-complete="{{ 'true' if row.reviewer_complete else 'false' }}"
+                        title="Complete means only the reviewer's text edit above is finished. It does not check the audio or comments — use 'Mark verified' for that.">
                   {% if row.reviewer_complete %}&#10003; Complete{% else %}Mark complete{% endif %}
                 </button>
                 <button type="button" class="btn btn-secondary btn-sm" data-action="regenerate-audio" data-locator="{{ row.sr_no }}">Regenerate audio</button>

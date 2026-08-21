@@ -2,7 +2,15 @@
 {% if standalone %}
 <audio controls preload="metadata" {{ extra_attrs }} src="audio/{{ audio_path }}"></audio>
 {% else %}
+<span class="audio-player">
 <audio controls preload="metadata" {{ extra_attrs }} src="{{ url_for('episode_audio', episode_id=episode_id, filename=audio_path) }}"></audio>
+<span class="audio-skip-controls">
+  <button type="button" class="audio-skip-btn" data-skip="-10" title="Back 10s">&laquo;10</button>
+  <button type="button" class="audio-skip-btn" data-skip="-5" title="Back 5s">&lsaquo;5</button>
+  <button type="button" class="audio-skip-btn" data-skip="5" title="Forward 5s">5&rsaquo;</button>
+  <button type="button" class="audio-skip-btn" data-skip="10" title="Forward 10s">10&raquo;</button>
+</span>
+</span>
 {% endif %}
 {% endmacro %}
 
