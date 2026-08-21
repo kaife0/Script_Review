@@ -45,6 +45,14 @@ def read_bytes(episode_id: str, relative_path: str) -> bytes:
         return f.read()
 
 
+def exists(episode_id: str, relative_path: str) -> bool:
+    if using_gcs():
+        blob = _bucket_client().blob(f"{episode_id}/{relative_path}")
+        return blob.exists()
+    full_path = os.path.join(_LOCAL_ROOT, episode_id, relative_path)
+    return os.path.isfile(full_path)
+
+
 def list_files(episode_id: str, prefix: str) -> list[str]:
     """List filenames (not full paths) under episode_id/prefix/."""
     key_prefix = f"{episode_id}/{prefix}/"

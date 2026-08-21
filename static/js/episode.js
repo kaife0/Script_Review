@@ -136,6 +136,25 @@
     });
   });
 
+  // ---- fill in a blank AI-translated row on demand ----
+  document.addEventListener("click", e => {
+    const btn = e.target.closest('[data-action="ai-fill"]');
+    if (!btn) return;
+    const locator = btn.dataset.locator;
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = "Translating…";
+    post(`/episode/${episodeId}/row/${locator}/ai-fill`).then(data => {
+      if (!data.ok) {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        alert(data.error || "Failed to translate this line.");
+        return;
+      }
+      location.reload();
+    });
+  });
+
   // ---- audio source switch / delete reviewer audio (rows only) ----
   document.addEventListener("click", e => {
     const useReviewer = e.target.closest('[data-action="use-reviewer-audio"]');

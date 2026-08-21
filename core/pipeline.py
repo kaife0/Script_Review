@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from core import db, storage
 from core.llm_client import get_llm_client
-from core.llm_review import review_chapter, find_difficult_words, translate_titles
+from core.llm_review import review_chapter, find_difficult_words, translate_titles, translate_rows
 from core.parsing import parse_pair
 from core.tts import get_backend
 from core.voice_registry import VoicePackMissingError, cast_voices
@@ -52,18 +52,22 @@ def _rows_to_chapters(parsed: dict) -> list[dict]:
 
 def _run_parse_stage(episode_id: str, episode: dict) -> dict:
     db.set_episode_status(episode_id, "parsing")
+    has_translated_doc = storage.exists(episode_id, "uploads/translated.docx")
     with tempfile.TemporaryDirectory() as tmp_dir:
         english_path = os.path.join(tmp_dir, "english.docx")
-        translated_path = os.path.join(tmp_dir, "translated.docx")
         with open(english_path, "wb") as f:
             f.write(storage.read_bytes(episode_id, "uploads/english.docx"))
-        with open(translated_path, "wb") as f:
-            f.write(storage.read_bytes(episode_id, "uploads/translated.docx"))
+        translated_path = None
+        if has_translated_doc:
+            translated_path = os.path.join(tmp_dir, "translated.docx")
+            with open(translated_path, "wb") as f:
+                f.write(storage.read_bytes(episode_id, "uploads/translated.docx"))
         parsed = parse_pair(english_path, translated_path)
 
     chapters = _rows_to_chapters(parsed)
     db.set_episode_chapters(episode_id, chapters)
-    db.update_episode(episode_id, translated_title=None, title_audio_path=None)
+    db.update_episode(episode_id, translated_title=None, title_audio_path=None,
+                       translated_doc_missing=not has_translated_doc)
     if parsed["warnings"]:
         db.update_episode(episode_id, alignment_warnings=parsed["warnings"])
 
@@ -72,6 +76,28 @@ def _run_parse_stage(episode_id: str, episode: dict) -> dict:
         "episode %s: parsed %d chapters, %d rows, title=%r, warnings=%s",
         episode_id, len(chapters), total_rows, parsed["title"], parsed["warnings"],
     )
+    return db.get_episode(episode_id)
+
+
+def _run_ai_translation_stage(episode_id: str, episode: dict) -> dict:
+    """Fills in row['translated'] via AI when no translated script was uploaded. Idempotent:
+    a chapter whose rows already all have translated text (e.g. a retry after this stage
+    already ran) is skipped. No-ops entirely when a translated doc was uploaded -- that path's
+    behavior is unchanged from before this feature existed."""
+    if not episode.get("translated_doc_missing"):
+        return episode
+
+    client = get_llm_client()
+    target_lang = episode["target_lang_name"]
+    for chapter in episode["chapters"]:
+        rows = chapter["rows"]
+        if all(row["translated"].strip() for row in rows):
+            continue
+        translations = translate_rows(client, [row["english"] for row in rows], target_lang)
+        for row, translated in zip(rows, translations):
+            db.update_row(episode_id, row["sr_no"], translated=translated, reviewer_text=translated)
+        logger.info("episode %s: chapter %d AI-translated, %d rows",
+                    episode_id, chapter["chapter_number"], len(rows))
     return db.get_episode(episode_id)
 
 
@@ -246,9 +272,10 @@ def synthesize_title_audio(target_lang: str, text: str) -> bytes | None:
 
 
 def run_pipeline(episode_id: str) -> None:
-    """Run parse -> translate titles -> review -> difficult words -> TTS for an episode.
-    Idempotent: skips stages/rows already done. Expects english.docx/translated.docx
-    already saved under uploads/ for this episode.
+    """Run parse -> AI-translate (if needed) -> translate titles -> review -> difficult words
+    -> TTS for an episode. Idempotent: skips stages/rows already done. Expects english.docx
+    already saved under uploads/ for this episode; uploads/translated.docx is optional -- if
+    absent, _run_ai_translation_stage fills in every row's translation via AI.
     """
     logger.info("episode %s: pipeline starting", episode_id)
     try:
@@ -259,6 +286,7 @@ def run_pipeline(episode_id: str) -> None:
         if not episode["chapters"]:
             episode = _run_parse_stage(episode_id, episode)
 
+        episode = _run_ai_translation_stage(episode_id, episode)
         episode = _run_title_translation_stage(episode_id, episode)
         episode = _run_review_stage(episode_id, episode)
         episode = _run_difficult_words_stage(episode_id, episode)

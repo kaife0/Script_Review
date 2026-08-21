@@ -351,12 +351,16 @@
         <span class="translated-title">— {{ chapter.translated_title or chapter.title }}</span>
         <span class="count">{{ chapter.rows | length }} lines</span>
       </div>
-      {% if chapter.title_audio_path %}
       <div class="audio-strip" style="border-top:none; background:transparent; padding-left:0;">
         <span class="strip-label">Chapter title audio</span>
-        {{ macros.audio_tag(episode._id, chapter.title_audio_path, standalone) }}
+        {% if chapter.title_audio_path %}
+          {{ macros.audio_tag(episode._id, chapter.title_audio_path, standalone) }}
+        {% elif not standalone and audio_in_progress %}
+          <span class="audio-generating"><span class="mini-spinner"></span>Generating audio&hellip;</span>
+        {% else %}
+          <span class="no-audio">no audio</span>
+        {% endif %}
       </div>
-      {% endif %}
     </div>
 
     {% if not standalone %}
@@ -446,21 +450,6 @@
 
           <div class="box">
             <div class="box-label">
-              AI Translated
-              {% if not standalone %}{{ comments.comment_toggle('ai_translation', row.comments.ai_translation) }}{% endif %}
-            </div>
-            {% if not standalone %}
-              <div class="box-text italian anchorable" data-locator="{{ row.sr_no }}" data-target="ai_translation"
-                   data-raw-text="{{ row.translated }}">{{ row.translated }}</div>
-              <script type="application/json" class="anchor-data" data-locator="{{ row.sr_no }}" data-target="ai_translation">{{ row.comments.ai_translation | selectattr('anchor') | list | tojson }}</script>
-              {{ comments.comment_panel('ai_translation', row.comments.ai_translation, row.sr_no) }}
-            {% else %}
-              <div class="box-text italian">{{ row.translated }}</div>
-            {% endif %}
-          </div>
-
-          <div class="box">
-            <div class="box-label">
               Reviewer's Edit
               {% if not standalone %}{{ comments.comment_toggle('reviewer_edit', row.comments.reviewer_edit) }}{% endif %}
             </div>
@@ -502,6 +491,24 @@
                 <span class="dw-empty">None flagged for this line.</span>
               {% endif %}
             </div>
+          </div>
+
+          <div class="box">
+            <div class="box-label">
+              AI Translated
+              {% if not standalone %}{{ comments.comment_toggle('ai_translation', row.comments.ai_translation) }}{% endif %}
+            </div>
+            {% if not standalone %}
+              <div class="box-text italian anchorable" data-locator="{{ row.sr_no }}" data-target="ai_translation"
+                   data-raw-text="{{ row.translated }}">{{ row.translated }}</div>
+              <script type="application/json" class="anchor-data" data-locator="{{ row.sr_no }}" data-target="ai_translation">{{ row.comments.ai_translation | selectattr('anchor') | list | tojson }}</script>
+              {% if not row.translated.strip() %}
+                <button type="button" class="btn btn-secondary btn-sm" data-action="ai-fill" data-locator="{{ row.sr_no }}" style="margin-top:0.5rem;">Fill with AI</button>
+              {% endif %}
+              {{ comments.comment_panel('ai_translation', row.comments.ai_translation, row.sr_no) }}
+            {% else %}
+              <div class="box-text italian">{{ row.translated }}</div>
+            {% endif %}
           </div>
         </div>
 

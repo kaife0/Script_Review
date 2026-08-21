@@ -17,6 +17,8 @@ from core.exports import build_html_export_zip, build_xlsx_export
 from core.jobs import start_pipeline
 from core.jobs import is_running
 from core.pipeline import synthesize_row_audio, synthesize_title_audio
+from core.llm_client import get_llm_client
+from core.llm_review import translate_rows
 from core.tts import transcode_to_mp3
 from config.languages import SUPPORTED_LANGUAGES, get_language, has_tts_backend
 
@@ -102,13 +104,14 @@ def new_episode(lang_code):
     translated_file = request.files.get("translated_docx")
     title = request.form.get("title", "").strip() or "Untitled Episode"
 
-    if not english_file or not translated_file:
-        return render_template("upload.html", lang=lang, error="Both files are required.",
+    if not english_file or not english_file.filename:
+        return render_template("upload.html", lang=lang, error="The English master script is required.",
                                 tts_available=has_tts_backend(lang_code))
 
     episode_id = db.create_episode(title=title, target_lang=lang_code, target_lang_name=lang["name"])
     storage.save_bytes(episode_id, "uploads/english.docx", english_file.read())
-    storage.save_bytes(episode_id, "uploads/translated.docx", translated_file.read())
+    if translated_file and translated_file.filename:
+        storage.save_bytes(episode_id, "uploads/translated.docx", translated_file.read())
 
     start_pipeline(episode_id)
 
@@ -281,6 +284,23 @@ def regenerate_row_audio(episode_id, sr_no):
     audio_url = url_for("episode_audio", episode_id=episode_id, filename=audio_path) if audio_path else None
     return jsonify({"ok": True, "audio_path": audio_path, "audio_status": audio_status,
                      "audio_url": audio_url, "audio_stale": False})
+
+
+@app.route("/episode/<episode_id>/row/<int:sr_no>/ai-fill", methods=["POST"])
+@_row_not_found_as_404
+def ai_fill_row(episode_id, sr_no):
+    """Translate one row's English text via AI and fill it into `translated`/`reviewer_text`.
+    For on-demand use when both docs were uploaded but this row's line failed to align
+    (blank translated text) -- the automatic per-episode AI translation stage only runs
+    when no translated doc was uploaded at all, so this route covers the other case."""
+    row = db.get_row(episode_id, sr_no)
+    episode = db.get_episode(episode_id)
+    if episode is None:
+        abort(404)
+    client = get_llm_client()
+    translated = translate_rows(client, [row["english"]], episode["target_lang_name"])[0]
+    db.update_row(episode_id, sr_no, translated=translated, reviewer_text=translated)
+    return jsonify({"ok": True, "translated": translated, "reviewer_text": translated})
 
 
 @app.route("/episode/<episode_id>/row/<int:sr_no>/reviewer-audio", methods=["POST"])

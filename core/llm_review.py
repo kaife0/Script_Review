@@ -34,6 +34,13 @@ TITLE_TRANSLATION_SYSTEM_PROMPT = (
     "must exactly equal the number of input titles."
 )
 
+ROW_TRANSLATION_SYSTEM_PROMPT = (
+    "You are a translation assistant for children's audiobook scripts. Translate each given "
+    "English dialogue line into the target language, keeping tone, meaning, and "
+    "kid-appropriateness natural for narration. Respond with a JSON array only, one string per "
+    "input line in the same order. The array length must exactly equal the number of input lines."
+)
+
 
 def _extract_json(text: str, opener: str, closer: str) -> list | None:
     text = text.strip()
@@ -113,3 +120,17 @@ def translate_titles(client: LLMClient, titles: list[str], target_language: str)
         if result is not None and len(result) == len(titles):
             return [str(t) for t in result]
     return list(titles)
+
+
+def translate_rows(client: LLMClient, english_lines: list[str], target_language: str) -> list[str]:
+    """Translate a batch of dialogue lines into target_language. Falls back to the original
+    English text per line on failure (matches translate_titles' fallback behavior so a
+    flaky LLM call never leaves a row silently blank)."""
+    if not english_lines:
+        return []
+    system = f"{ROW_TRANSLATION_SYSTEM_PROMPT} The target language is {target_language}."
+    for _ in range(2):
+        result = _call_json_array(client, system, english_lines)
+        if result is not None and len(result) == len(english_lines):
+            return [str(t) for t in result]
+    return list(english_lines)

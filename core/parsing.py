@@ -86,15 +86,23 @@ def _parse_doc(path: str) -> tuple[str, str, list[tuple[int, str, list[tuple[str
     return title, theme, chapters
 
 
-def parse_pair(english_path: str, translated_path: str) -> dict:
-    """Parse both docs, align by chapter index then row index. Returns rows + alignment warnings."""
+def parse_pair(english_path: str, translated_path: str | None) -> dict:
+    """Parse both docs, align by chapter index then row index. Returns rows + alignment warnings.
+
+    `translated_path` may be None when no translated script was uploaded -- every row's
+    `translated` field is left blank and no alignment warnings are raised (there's nothing
+    to misalign against); the pipeline fills them in via AI translation instead.
+    """
     en_title, en_theme, en_chapters = _parse_doc(english_path)
-    tr_title, tr_theme, tr_chapters = _parse_doc(translated_path)
+    if translated_path is None:
+        tr_title, tr_theme, tr_chapters = "", "", []
+    else:
+        tr_title, tr_theme, tr_chapters = _parse_doc(translated_path)
 
     warnings: list[str] = []
     rows: list[DialogueRow] = []
 
-    if len(en_chapters) != len(tr_chapters):
+    if translated_path is not None and len(en_chapters) != len(tr_chapters):
         warnings.append(
             f"Chapter count mismatch: English has {len(en_chapters)}, "
             f"translated has {len(tr_chapters)}."
@@ -112,7 +120,7 @@ def parse_pair(english_path: str, translated_path: str) -> dict:
         en_lines = en_ch[2] if en_ch else []
         tr_lines = tr_ch[2] if tr_ch else []
 
-        if len(en_lines) != len(tr_lines):
+        if translated_path is not None and len(en_lines) != len(tr_lines):
             warnings.append(
                 f"Chapter {chapter_num} ('{chapter_title}') dialogue count mismatch: "
                 f"English has {len(en_lines)}, translated has {len(tr_lines)}."
