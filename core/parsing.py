@@ -24,11 +24,17 @@ class DialogueRow:
 
 
 def _split_speaker(line: str) -> tuple[str, str]:
-    """Split on the FIRST ': ' into (speaker, text); text may start with a stage direction."""
+    """Split on the FIRST ': ' into (speaker, text); text may start with a stage direction.
+
+    Tolerates an accidental doubled separator in the source script (e.g. "Zuzu: : (...)"
+    instead of "Zuzu: (...)") by stripping one more leading ': ' or ':' off the text."""
     idx = line.find(": ")
     if idx == -1:
         return line.strip(), ""
-    return line[:idx].strip(), line[idx + 2:].strip()
+    speaker, text = line[:idx].strip(), line[idx + 2:].strip()
+    while text.startswith(":"):
+        text = text[1:].strip()
+    return speaker, text
 
 
 def _parse_doc(path: str) -> tuple[str, str, list[tuple[int, str, list[tuple[str, str]]]]]:
