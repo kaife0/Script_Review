@@ -249,6 +249,7 @@
         <button type="button" class="btn" id="jump-next">Jump to next unreviewed &darr;</button>
         <a class="btn btn-secondary" href="{{ url_for('export_html', episode_id=episode._id) }}">Export HTML</a>
         <a class="btn btn-secondary" href="{{ url_for('export_xlsx', episode_id=episode._id) }}">Export Excel</a>
+        <button type="button" class="btn btn-secondary" data-help-open><span class="help-trigger-mark">?</span> Help</button>
       </div>
     </div>
   </div>
@@ -554,6 +555,8 @@
   {% endfor %}
 
   {% if not standalone %}
+  {% include "_help.html" %}
+
   <div id="episode-config" hidden
        data-episode-id="{{ episode._id }}"
        data-verified-rows="{{ verified_rows }}"
