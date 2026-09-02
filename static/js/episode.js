@@ -638,6 +638,8 @@
   if (audioInProgress) {
     const pollAudioStatus = () => {
       fetch(`/episode/${episodeId}/audio-status`).then(r => r.json()).then(data => {
+        const stalledBanner = document.getElementById("audio-stalled-banner");
+        if (stalledBanner) stalledBanner.hidden = !data.stalled;
         let anyPending = false;
         for (const row of data.rows) {
           const slot = document.querySelector(`.audio-strip[data-audio-slot="${row.sr_no}"]`);
@@ -668,6 +670,7 @@
         if (data.status === "done") {
           const banner = document.getElementById("audio-progress-banner");
           if (banner) banner.remove();
+          if (stalledBanner) stalledBanner.remove();
           return;
         }
         if (anyPending) setTimeout(pollAudioStatus, 3000);

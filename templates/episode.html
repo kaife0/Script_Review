@@ -270,6 +270,13 @@
     <strong>Narration audio is still generating.</strong> Text, comments, and difficult words are ready to review now —
     rows without audio yet will fill in automatically as they finish, no need to refresh.
   </div>
+  <div class="alert alert-error" id="audio-stalled-banner" hidden>
+    Audio generation looks stuck — it stopped without finishing. Retry to pick up where it left off.
+    <form method="post" action="{{ url_for('episode_retry', episode_id=episode._id) }}"
+          data-pending-text="Retrying…" style="margin-top:0.6rem;">
+      <button class="btn btn-sm" type="submit">Retry now</button>
+    </form>
+  </div>
   {% endif %}
 
   {% if not standalone %}

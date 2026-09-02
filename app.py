@@ -159,8 +159,10 @@ def episode_audio_status(episode_id):
     episode = db.get_episode(episode_id)
     if episode is None:
         abort(404)
+    stalled = episode["status"] in ACTIVE_STATUSES and not is_running(episode_id)
     return jsonify({
         "status": episode["status"],
+        "stalled": stalled,
         "rows": [
             {**r,
              "audio_url": url_for("episode_audio", episode_id=episode_id, filename=r["audio_path"])
