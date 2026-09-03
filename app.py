@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, abort, Response
 
 from core import db, storage
-from core.exports import build_html_export_zip, build_xlsx_export
+from core.exports import build_docx_export, build_xlsx_export
 from core.jobs import start_pipeline
 from core.jobs import is_running
 from core.pipeline import synthesize_row_audio, synthesize_title_audio
@@ -584,17 +584,20 @@ def _serialize_comment(comment: dict) -> dict:
     return {**comment, "created_at": comment["created_at"].isoformat()}
 
 
-@app.route("/episode/<episode_id>/export/html")
-def export_html(episode_id):
+@app.route("/episode/<episode_id>/export/docx")
+def export_docx(episode_id):
     episode = db.get_episode(episode_id)
     if episode is None:
         abort(404)
     if episode["status"] != "done":
         abort(400, "Episode is not finished processing yet.")
-    rendered = render_template("episode.html", episode=episode, standalone=True)
-    buffer = build_html_export_zip(episode_id, rendered)
-    return send_file(buffer, mimetype="application/zip", as_attachment=True,
-                      download_name=f"{episode['title']}_{episode['target_lang']}.zip")
+    buffer = build_docx_export(episode)
+    return send_file(
+        buffer,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        as_attachment=True,
+        download_name=f"{episode['title']}_{episode['target_lang']}.docx",
+    )
 
 
 @app.route("/episode/<episode_id>/export/xlsx")

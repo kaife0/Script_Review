@@ -1,18 +1,15 @@
-"""On-demand export builders: standalone HTML+audio zip, and xlsx. Not run during the pipeline."""
+"""On-demand export builders: xlsx and docx. Not run during the pipeline."""
 import io
-import zipfile
 
-from core import storage
 from core.report_excel import build_excel_report
+from core.report_docx import build_docx_report
 
 
-def build_html_export_zip(episode_id: str, rendered_html: str) -> io.BytesIO:
-    """Zip the rendered results HTML together with the episode's audio folder (relative links intact)."""
+def build_docx_export(episode: dict) -> io.BytesIO:
+    """Build the reviewed-script docx (same format as the input script) on demand."""
+    doc = build_docx_report(episode)
     buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("index.html", rendered_html)
-        for filename in storage.list_files(episode_id, "audio"):
-            zf.writestr(f"audio/{filename}", storage.read_bytes(episode_id, f"audio/{filename}"))
+    doc.save(buffer)
     buffer.seek(0)
     return buffer
 

@@ -247,7 +247,7 @@
       </div>
       <div class="actions">
         <button type="button" class="btn" id="jump-next">Jump to next unreviewed &darr;</button>
-        <a class="btn btn-secondary" href="{{ url_for('export_html', episode_id=episode._id) }}">Export HTML</a>
+        <a class="btn btn-secondary" href="{{ url_for('export_docx', episode_id=episode._id) }}">Export Word</a>
         <a class="btn btn-secondary" href="{{ url_for('export_xlsx', episode_id=episode._id) }}">Export Excel</a>
         <button type="button" class="btn btn-secondary" data-help-open><span class="help-trigger-mark">?</span> Help</button>
       </div>
