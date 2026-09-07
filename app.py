@@ -88,6 +88,8 @@ def lang_dashboard(lang_code):
     for ep in episodes:
         ep["row_count"] = sum(len(c["rows"]) for c in ep["chapters"])
         ep["chapter_count"] = len(ep["chapters"])
+        ep["review_percent"] = db.review_percent(ep["_id"]) if ep["status"] in (
+            db.STATUS_TTS_DONE, db.STATUS_REVIEWED) else 0
     return render_template("lang_dashboard.html", lang=lang, episodes=episodes)
 
 
@@ -118,7 +120,7 @@ def new_episode(lang_code):
     return redirect(url_for("episode_view", episode_id=episode_id))
 
 
-RESULTS_VIEWABLE_STATUSES = {"tts", "done"}
+RESULTS_VIEWABLE_STATUSES = {"tts", db.STATUS_TTS_DONE, db.STATUS_REVIEWED}
 
 
 @app.route("/episode/<episode_id>")
@@ -131,7 +133,7 @@ def episode_view(episode_id):
     verified, total = db.verification_counts(episode_id)
     return render_template("episode.html", episode=episode, standalone=False,
                             verified_rows=verified, total_rows=total,
-                            audio_in_progress=episode["status"] != "done")
+                            audio_in_progress=episode["status"] == "tts")
 
 
 ACTIVE_STATUSES = {"parsing", "translating_titles", "reviewing", "finding_difficult_words", "tts"}
@@ -144,11 +146,13 @@ def episode_status(episode_id):
         abort(404)
     progress = db.progress_counts(episode_id, episode)
     verified = progress.pop("verified_rows")
+    total = progress.get("total_rows", 0)
     stalled = episode["status"] in ACTIVE_STATUSES and not is_running(episode_id)
     return jsonify({
         "status": episode["status"],
         "error_message": episode.get("error_message"),
         "verified_rows": verified,
+        "review_percent": round((verified / total) * 100) if total else 0,
         "stalled": stalled,
         **progress,
     })
@@ -210,13 +214,16 @@ def update_row(episode_id, sr_no):
         if flag not in ("ok", "note"):
             abort(400, "review_flag must be 'ok' or 'note'")
         fields["review_flag"] = flag
-    if "human_verified" in request.form:
+    verifying = "human_verified" in request.form
+    if verifying:
         fields["human_verified"] = request.form["human_verified"] == "true"
     if fields:
         db.update_row(episode_id, sr_no, **fields)
+    new_status = db.sync_review_status(episode_id) if verifying else None
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         verified, total = db.verification_counts(episode_id)
-        return jsonify({"ok": True, "verified_rows": verified, "total_rows": total})
+        return jsonify({"ok": True, "verified_rows": verified, "total_rows": total,
+                         "episode_status": new_status})
     return redirect(url_for("episode_view", episode_id=episode_id))
 
 
@@ -589,7 +596,7 @@ def export_docx(episode_id):
     episode = db.get_episode(episode_id)
     if episode is None:
         abort(404)
-    if episode["status"] != "done":
+    if episode["status"] not in (db.STATUS_TTS_DONE, db.STATUS_REVIEWED):
         abort(400, "Episode is not finished processing yet.")
     buffer = build_docx_export(episode)
     return send_file(
@@ -605,7 +612,7 @@ def export_xlsx(episode_id):
     episode = db.get_episode(episode_id)
     if episode is None:
         abort(404)
-    if episode["status"] != "done":
+    if episode["status"] not in (db.STATUS_TTS_DONE, db.STATUS_REVIEWED):
         abort(400, "Episode is not finished processing yet.")
     buffer = build_xlsx_export(episode)
     return send_file(

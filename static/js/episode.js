@@ -32,6 +32,13 @@
     document.getElementById("verify-pct").textContent = pct + "%";
     document.getElementById("verify-fill").style.width = pct + "%";
     document.getElementById("verify-count").textContent = `${verified} / ${total} lines verified`;
+    const badge = document.getElementById("episode-status-badge");
+    if (badge) {
+      const reviewed = total > 0 && verified === total;
+      badge.textContent = reviewed ? "reviewed" : "tts & translation done";
+      badge.classList.toggle("badge-ok", reviewed);
+      badge.classList.toggle("badge-warn", !reviewed);
+    }
   }
 
   // ---- verify toggle ----
@@ -667,7 +674,7 @@
             anyPending = true;
           }
         }
-        if (data.status === "done") {
+        if (["tts_done", "reviewed", "done"].includes(data.status)) {
           const banner = document.getElementById("audio-progress-banner");
           if (banner) banner.remove();
           if (stalledBanner) stalledBanner.remove();

@@ -292,8 +292,8 @@ def run_pipeline(episode_id: str) -> None:
         episode = _run_difficult_words_stage(episode_id, episode)
         episode = _run_tts_stage(episode_id, episode)
 
-        db.set_episode_status(episode_id, "done")
-        logger.info("episode %s: pipeline done", episode_id)
+        db.set_episode_status(episode_id, db.STATUS_TTS_DONE)
+        logger.info("episode %s: pipeline done (awaiting human review)", episode_id)
     except VoicePackMissingError as exc:
         logger.warning("episode %s: pipeline failed (missing voice pack): %s", episode_id, exc)
         db.set_episode_status(episode_id, "failed", error_message=str(exc))

@@ -95,7 +95,8 @@ class EndToEndTest(unittest.TestCase):
         episode = db.get_episode(episode_id)
         self.assertIsNotNone(episode)
         self.assertIn(episode["status"], ("uploaded", "parsing", "translating_titles",
-                                           "reviewing", "finding_difficult_words", "tts", "failed", "done"))
+                                           "reviewing", "finding_difficult_words", "tts", "failed",
+                                           "tts_done", "reviewed"))
 
         for _ in range(50):
             if not is_running(episode_id):
@@ -148,7 +149,7 @@ class EndToEndTest(unittest.TestCase):
             title_comments={t: [] for t in db.TITLE_COMMENT_TARGETS},
             title_audio_status="pending", title_audio_generated_from_text=None,
         )
-        db.set_episode_status(episode_id, "done")
+        db.set_episode_status(episode_id, db.STATUS_TTS_DONE)
         return episode_id
 
     def test_episode_view_renders(self):
@@ -170,6 +171,27 @@ class EndToEndTest(unittest.TestCase):
 
         row = db.get_row(episode_id, 1)
         self.assertTrue(row["human_verified"])
+
+    def test_episode_promoted_to_reviewed_when_fully_verified(self):
+        episode_id = self._make_parsed_episode()
+        self.assertEqual(db.get_episode(episode_id)["status"], "tts_done")
+
+        for sr_no in (1, 2):
+            resp = self.client.post(f"/episode/{episode_id}/row/{sr_no}",
+                                     data={"human_verified": "true"},
+                                     headers={"X-Requested-With": "XMLHttpRequest"})
+            self.assertEqual(resp.status_code, 200)
+
+        data = resp.get_json()
+        self.assertEqual(data["episode_status"], "reviewed")
+        self.assertEqual(db.get_episode(episode_id)["status"], "reviewed")
+
+        # Un-verifying one row demotes the episode back to tts_done.
+        resp = self.client.post(f"/episode/{episode_id}/row/1",
+                                 data={"human_verified": "false"},
+                                 headers={"X-Requested-With": "XMLHttpRequest"})
+        self.assertEqual(resp.get_json()["episode_status"], "tts_done")
+        self.assertEqual(db.get_episode(episode_id)["status"], "tts_done")
 
     def test_reviewer_text_autosave_and_undo_redo(self):
         episode_id = self._make_parsed_episode()
@@ -279,7 +301,7 @@ class EndToEndTest(unittest.TestCase):
         resp = self.client.get(f"/episode/{episode_id}/status")
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
-        self.assertEqual(data["status"], "done")
+        self.assertEqual(data["status"], "tts_done")
         self.assertEqual(data["total_rows"], 2)
         self.assertFalse(data["stalled"])
 

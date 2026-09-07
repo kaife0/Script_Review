@@ -10,6 +10,17 @@ from pymongo import MongoClient
 
 _client: MongoClient | None = None
 
+# Episode lifecycle statuses. "tts_done" means translation + TTS finished and the
+# episode is ready for human review; "reviewed" means every row has been marked
+# human_verified (100% review complete). Kept distinct so the dashboard can tell
+# "ready to review" apart from "actually signed off" instead of collapsing both
+# into a single "done".
+STATUS_TTS_DONE = "tts_done"
+STATUS_REVIEWED = "reviewed"
+# Old episodes/tests may still carry the pre-rename "done" status; treat it as
+# equivalent to STATUS_TTS_DONE wherever a status is read back out.
+LEGACY_DONE_STATUSES = {"done"}
+
 
 def get_db():
     global _client
@@ -49,10 +60,22 @@ def create_episode(title: str, target_lang: str, target_lang_name: str) -> str:
     return str(result.inserted_id)
 
 
+def _normalize_status(doc: dict) -> dict:
+    """Map the legacy "done" status (pre-dating the tts_done/reviewed split) to its
+    modern equivalent, so old episodes read back with an accurate status without
+    needing a separate migration to run first."""
+    if doc.get("status") in LEGACY_DONE_STATUSES:
+        counts = _row_counts(str(doc["_id"]) if isinstance(doc["_id"], ObjectId) else doc["_id"])
+        all_verified = counts["total_rows"] > 0 and counts["verified_rows"] == counts["total_rows"]
+        doc["status"] = STATUS_REVIEWED if all_verified else STATUS_TTS_DONE
+    return doc
+
+
 def get_episode(episode_id: str) -> dict | None:
     doc = episodes_collection().find_one({"_id": ObjectId(episode_id)})
     if doc:
         doc["_id"] = str(doc["_id"])
+        doc = _normalize_status(doc)
     return doc
 
 
@@ -60,6 +83,7 @@ def list_episodes_for_language(target_lang: str) -> list[dict]:
     docs = list(episodes_collection().find({"target_lang": target_lang}).sort("created_at", -1))
     for doc in docs:
         doc["_id"] = str(doc["_id"])
+        _normalize_status(doc)
     return docs
 
 
@@ -151,6 +175,28 @@ def verification_counts(episode_id: str) -> tuple[int, int]:
     """Return (verified_rows, total_rows) across all chapters."""
     counts = _row_counts(episode_id)
     return counts["verified_rows"], counts["total_rows"]
+
+
+def review_percent(episode_id: str) -> int:
+    """Percentage (0-100) of rows marked human_verified, for progress displays."""
+    verified, total = verification_counts(episode_id)
+    return round((verified / total) * 100) if total else 0
+
+
+def sync_review_status(episode_id: str) -> str | None:
+    """Promote an episode to STATUS_REVIEWED once every row is human_verified, or
+    demote it back to STATUS_TTS_DONE if a row is un-verified afterwards. No-ops for
+    episodes still mid-pipeline (parsing/tts/etc) or failed -- only the two
+    post-pipeline statuses are affected. Returns the new status, or None if the
+    episode's status wasn't touched (e.g. mid-pipeline or not found)."""
+    episode = get_episode(episode_id)
+    if episode is None or episode["status"] not in (STATUS_TTS_DONE, STATUS_REVIEWED):
+        return None
+    verified, total = verification_counts(episode_id)
+    target_status = STATUS_REVIEWED if total > 0 and verified == total else STATUS_TTS_DONE
+    if episode["status"] != target_status:
+        set_episode_status(episode_id, target_status)
+    return target_status
 
 
 def audio_statuses(episode_id: str) -> list[dict]:

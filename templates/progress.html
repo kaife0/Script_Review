@@ -100,16 +100,18 @@
     reviewing: "Running the AI review", finding_difficult_words: "Finding difficult words",
     tts: "Generating narration audio", uploaded: "Starting",
   };
+  const PIPELINE_COMPLETE = ["tts_done", "reviewed", "done"]; // "done" kept for pre-migration episodes
 
   function applyProgress(data) {
     const stalledBanner = document.getElementById("stalled-banner");
     if (stalledBanner) stalledBanner.hidden = !data.stalled;
 
+    const isComplete = PIPELINE_COMPLETE.includes(data.status);
     const currentIndex = STAGES.indexOf(data.status);
     document.querySelectorAll(".stage").forEach(li => {
       const stageIndex = STAGES.indexOf(li.dataset.stage);
-      li.classList.toggle("done", currentIndex > stageIndex || data.status === "done");
-      li.classList.toggle("active", stageIndex === currentIndex && data.status !== "done");
+      li.classList.toggle("done", currentIndex > stageIndex || isComplete);
+      li.classList.toggle("active", stageIndex === currentIndex && !isComplete);
     });
 
     const total = data.total_rows || 0;
@@ -135,7 +137,7 @@
 
   function poll() {
     fetch(`/episode/${episodeId}/status`).then(r => r.json()).then(data => {
-      if (["tts", "done", "failed"].includes(data.status)) {
+      if (["tts", "tts_done", "reviewed", "done", "failed"].includes(data.status)) {
         window.location.reload();
         return;
       }
@@ -143,7 +145,7 @@
       setTimeout(poll, 1500);
     }).catch(() => setTimeout(poll, 3000));
   }
-  {% if episode.status not in ("tts", "done", "failed") %}
+  {% if episode.status not in ("tts", "tts_done", "reviewed", "done", "failed") %}
   poll();
   {% endif %}
 </script>

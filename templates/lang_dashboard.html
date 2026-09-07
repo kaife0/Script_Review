@@ -11,21 +11,30 @@
 {% if episodes %}
 <div class="panel">
 <table>
-  <thead><tr><th>Title</th><th>Status</th><th>Chapters</th><th>Rows</th><th>Created</th><th></th><th></th></tr></thead>
+  <thead><tr><th>Title</th><th>Status</th><th>Review</th><th>Chapters</th><th>Rows</th><th>Created</th><th></th><th></th></tr></thead>
   <tbody>
   {% for ep in episodes %}
     <tr>
       <td><strong>{{ ep.title }}</strong></td>
       <td>
-        {% if ep.status == "done" %}<span class="badge badge-ok">done</span>
+        {% if ep.status == "reviewed" %}<span class="badge badge-ok">reviewed</span>
+        {% elif ep.status == "tts_done" %}<span class="badge badge-warn">tts &amp; translation done</span>
         {% elif ep.status == "failed" %}<span class="badge badge-fail">failed</span>
         {% else %}<span class="badge badge-warn">{{ ep.status | replace("_", " ") }}</span>{% endif %}
+      </td>
+      <td>
+        {% if ep.status in ("tts_done", "reviewed") %}
+        <div class="mini-progress-track" title="{{ ep.review_percent }}% of lines marked verified">
+          <div class="mini-progress-fill" style="width:{{ ep.review_percent }}%;"></div>
+        </div>
+        <span class="mini-progress-label">{{ ep.review_percent }}%</span>
+        {% else %}&mdash;{% endif %}
       </td>
       <td>{{ ep.chapter_count }}</td>
       <td>{{ ep.row_count }}</td>
       <td>{{ ep.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
       <td><a href="{{ url_for('episode_view', episode_id=ep._id) }}">
-        {% if ep.status == "done" %}View results &rarr;{% else %}View progress &rarr;{% endif %}
+        {% if ep.status in ("tts_done", "reviewed") %}View results &rarr;{% else %}View progress &rarr;{% endif %}
       </a></td>
       <td>
         <form method="post" action="{{ url_for('episode_delete', episode_id=ep._id) }}"
@@ -45,4 +54,12 @@
   <a class="btn" href="{{ url_for('new_episode', lang_code=lang.code) }}">Upload the first one</a>
 </div>
 {% endif %}
+
+<style>
+  .mini-progress-track { display: inline-block; width: 70px; height: 6px; background: #e5e7eb;
+    border-radius: 999px; overflow: hidden; vertical-align: middle; margin-right: 0.4rem; }
+  .mini-progress-fill { height: 100%; background: linear-gradient(90deg, #22c55e, #16a34a);
+    border-radius: 999px; }
+  .mini-progress-label { font-size: 0.78rem; color: var(--text-muted); vertical-align: middle; }
+</style>
 {% endblock %}
