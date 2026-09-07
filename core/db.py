@@ -63,9 +63,9 @@ def create_episode(title: str, target_lang: str, target_lang_name: str) -> str:
 def _normalize_status(doc: dict) -> dict:
     """Map the legacy "done" status (pre-dating the tts_done/reviewed split) to its
     modern equivalent, so old episodes read back with an accurate status without
-    needing a separate migration to run first."""
+    needing a separate migration to run first. Expects doc["_id"] already stringified."""
     if doc.get("status") in LEGACY_DONE_STATUSES:
-        counts = _row_counts(str(doc["_id"]) if isinstance(doc["_id"], ObjectId) else doc["_id"])
+        counts = _row_counts(doc["_id"])
         all_verified = counts["total_rows"] > 0 and counts["verified_rows"] == counts["total_rows"]
         doc["status"] = STATUS_REVIEWED if all_verified else STATUS_TTS_DONE
     return doc
