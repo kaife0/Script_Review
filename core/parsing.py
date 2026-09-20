@@ -7,7 +7,7 @@ TITLE_WORDS = "Title|Titolo|Titel|Título|Titre"
 THEME_WORDS = "Theme|Tema|Thème"
 CHAPTER_WORDS = "Chapter|Capitolo|Kapitel|Capítulo|Chapitre"
 
-CHAPTER_RE = re.compile(rf"^(?:{CHAPTER_WORDS})\s+(\d+)\s*[:\-–]\s*([^\[]+)", re.IGNORECASE)
+CHAPTER_RE = re.compile(rf"^(?:{CHAPTER_WORDS})\s+(\d+)(?:\s*[:\-–]\s*([^\[]+))?", re.IGNORECASE)
 TITLE_RE = re.compile(rf"^(?:{TITLE_WORDS})\s*:\s*(.+)$", re.IGNORECASE)
 THEME_RE = re.compile(rf"^(?:{THEME_WORDS})\s*:\s*(.+)$", re.IGNORECASE)
 QUOTED_LINE_RE = re.compile(r'"([^"]*)"\s*,?')
@@ -69,7 +69,8 @@ def _parse_doc(path: str) -> tuple[str, str, list[tuple[int, str, list[tuple[str
             m = CHAPTER_RE.match(text)
             if m:
                 current_lines = []
-                chapters.append((int(m.group(1)), m.group(2).strip(), current_lines))
+                chapter_title = (m.group(2) or "").strip()
+                chapters.append((int(m.group(1)), chapter_title, current_lines))
                 text = text[m.end():]
                 if "[" not in text:
                     continue
