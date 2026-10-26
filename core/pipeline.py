@@ -211,7 +211,10 @@ def _run_tts_stage(episode_id: str, episode: dict) -> dict:
         db.set_row_audio(episode_id, row["sr_no"], audio_path=filename, audio_status="done",
                           audio_generated_from_text=text)
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    # Group rows by voice so concurrent workers share the same few loaded engines (see
+    # core.tts._MAX_ENGINES) instead of thrashing the cache; fewer workers also bounds memory.
+    pending_rows.sort(key=lambda r: casting[r["speaker"]]["id"])
+    with ThreadPoolExecutor(max_workers=int(os.environ.get("TTS_WORKERS", "2"))) as pool:
         futures = {pool.submit(_synthesize_row, row): row for row in pending_rows}
         first_error = None
         for future in as_completed(futures):
@@ -293,6 +296,7 @@ def run_pipeline(episode_id: str) -> None:
         episode = _run_tts_stage(episode_id, episode)
 
         db.set_episode_status(episode_id, db.STATUS_TTS_DONE)
+        db.sync_review_status(episode_id)  # keep "reviewed" if every row was already verified
         logger.info("episode %s: pipeline done (awaiting human review)", episode_id)
     except VoicePackMissingError as exc:
         logger.warning("episode %s: pipeline failed (missing voice pack): %s", episode_id, exc)
@@ -301,3 +305,28 @@ def run_pipeline(episode_id: str) -> None:
         logger.exception("episode %s: pipeline failed", episode_id)
         db.set_episode_status(episode_id, "failed", error_message=str(exc))
         raise
+
+
+def episode_missing_audio(episode: dict) -> bool:
+    """True if TTS is available for the episode's language but some row has no finished audio."""
+    if not has_tts_backend(episode["target_lang"]):
+        return False
+    return any(not db.row_audio_done(row)
+               for chapter in episode.get("chapters", []) for row in chapter["rows"])
+
+
+def repair_missing_audio(episode_id: str) -> None:
+    """Synthesize only the rows of an already-processed episode that lack audio. Unlike
+    run_pipeline, a failure here never marks the episode 'failed': its previous status is
+    restored so a finished/reviewed episode stays viewable, and the next open retries."""
+    episode = db.get_episode(episode_id)
+    if episode is None:
+        return
+    previous_status = episode["status"]
+    try:
+        _run_tts_stage(episode_id, episode)
+        logger.info("episode %s: missing audio repaired", episode_id)
+    except Exception:
+        logger.exception("episode %s: audio repair failed; will retry on next open", episode_id)
+    finally:
+        db.set_episode_status(episode_id, previous_status, error_message=None)

@@ -104,6 +104,52 @@ def set_episode_status(episode_id: str, status: str, error_message: str | None =
     update_episode(episode_id, status=status, error_message=error_message)
 
 
+PIPELINE_LEASE_SECONDS = 90
+
+
+def claim_pipeline_lease(episode_id: str, owner: str) -> bool:
+    """Atomically take (or re-take, if expired) the right to run an episode's pipeline. The
+    lease lives in MongoDB, not process memory, so it also stops a second gunicorn worker or
+    Cloud Run instance from running a duplicate pipeline for the same episode, and it expires
+    on its own if the holder is OOM-killed so the episode can be resumed."""
+    from datetime import timedelta
+    now = _now()
+    result = episodes_collection().update_one(
+        {"_id": ObjectId(episode_id),
+         "$or": [{"pipeline_lease_until": {"$exists": False}},
+                 {"pipeline_lease_until": None},
+                 {"pipeline_lease_until": {"$lt": now}},
+                 {"pipeline_lease_owner": owner}]},
+        {"$set": {"pipeline_lease_owner": owner,
+                  "pipeline_lease_until": now + timedelta(seconds=PIPELINE_LEASE_SECONDS)}},
+    )
+    return result.modified_count == 1
+
+
+def release_pipeline_lease(episode_id: str, owner: str) -> None:
+    episodes_collection().update_one(
+        {"_id": ObjectId(episode_id), "pipeline_lease_owner": owner},
+        {"$set": {"pipeline_lease_until": None, "pipeline_lease_owner": None}},
+    )
+
+
+def pipeline_lease_active(episode_id: str) -> bool:
+    doc = episodes_collection().find_one({"_id": ObjectId(episode_id)}, {"pipeline_lease_until": 1})
+    until = doc.get("pipeline_lease_until") if doc else None
+    return bool(until) and until > _now()
+
+
+def list_stalled_episode_ids(active_statuses) -> list[str]:
+    """Episodes mid-pipeline whose lease is missing or expired, i.e. nobody is working on them."""
+    docs = episodes_collection().find(
+        {"status": {"$in": list(active_statuses)},
+         "$or": [{"pipeline_lease_until": {"$exists": False}},
+                 {"pipeline_lease_until": None},
+                 {"pipeline_lease_until": {"$lt": _now()}}]},
+        {"_id": 1})
+    return [str(d["_id"]) for d in docs]
+
+
 def delete_episode(episode_id: str) -> None:
     episodes_collection().delete_one({"_id": ObjectId(episode_id)})
 

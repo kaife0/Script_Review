@@ -2,6 +2,9 @@
 pipeline runs synchronously in the request; results rendered dynamically from the episode doc.
 """
 import logging
+import os
+import threading
+import time
 from functools import wraps
 
 from dotenv import load_dotenv
@@ -14,9 +17,9 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify, s
 
 from core import db, storage
 from core.exports import build_docx_export, build_xlsx_export
-from core.jobs import start_pipeline
+from core.jobs import start_pipeline, start_audio_repair
 from core.jobs import is_running
-from core.pipeline import synthesize_row_audio, synthesize_title_audio
+from core.pipeline import episode_missing_audio, synthesize_row_audio, synthesize_title_audio
 from core.llm_client import get_llm_client
 from core.llm_review import translate_rows
 from core.tts import transcode_to_mp3
@@ -130,13 +133,45 @@ def episode_view(episode_id):
         abort(404)
     if episode["status"] not in RESULTS_VIEWABLE_STATUSES:
         return render_template("progress.html", episode=episode)
+    # Self-heal: a finished episode with missing audio (killed worker, failed row) is repaired
+    # in the background on open; the page then shows the usual "audio generating" polling UI.
+    repairing = (episode["status"] in (db.STATUS_TTS_DONE, db.STATUS_REVIEWED)
+                 and episode_missing_audio(episode) and start_audio_repair(episode_id))
     verified, total = db.verification_counts(episode_id)
     return render_template("episode.html", episode=episode, standalone=False,
                             verified_rows=verified, total_rows=total,
-                            audio_in_progress=episode["status"] == "tts")
+                            audio_in_progress=repairing or episode["status"] == "tts")
 
 
 ACTIVE_STATUSES = {"parsing", "translating_titles", "reviewing", "finding_difficult_words", "tts"}
+
+
+def _resume_if_stalled(episode_id: str, episode: dict) -> bool:
+    """An episode mid-pipeline with no live lease lost its worker (OOM kill, instance restart).
+    Resume it -- the pipeline skips finished stages/rows -- instead of leaving it stuck forever.
+    Returns True if it is (now) running."""
+    if episode["status"] not in ACTIVE_STATUSES:
+        return False
+    if is_running(episode_id):
+        return True
+    return start_pipeline(episode_id)
+
+
+def _stalled_sweeper(interval_seconds: int = 60) -> None:
+    """Background safety net: every minute, resume any episode left mid-pipeline with no live
+    lease (OOM kill, redeploy, instance restart), whether or not anyone has its page open."""
+    while True:
+        try:
+            for episode_id in db.list_stalled_episode_ids(ACTIVE_STATUSES):
+                if start_pipeline(episode_id):
+                    app.logger.warning("sweeper: resumed stalled episode %s", episode_id)
+        except Exception:
+            app.logger.exception("sweeper: failed")
+        time.sleep(interval_seconds)
+
+
+def start_stalled_sweeper() -> None:
+    threading.Thread(target=_stalled_sweeper, daemon=True, name="stalled-sweeper").start()
 
 
 @app.route("/episode/<episode_id>/status")
@@ -147,7 +182,7 @@ def episode_status(episode_id):
     progress = db.progress_counts(episode_id, episode)
     verified = progress.pop("verified_rows")
     total = progress.get("total_rows", 0)
-    stalled = episode["status"] in ACTIVE_STATUSES and not is_running(episode_id)
+    stalled = episode["status"] in ACTIVE_STATUSES and not _resume_if_stalled(episode_id, episode)
     return jsonify({
         "status": episode["status"],
         "error_message": episode.get("error_message"),
@@ -163,7 +198,7 @@ def episode_audio_status(episode_id):
     episode = db.get_episode(episode_id)
     if episode is None:
         abort(404)
-    stalled = episode["status"] in ACTIVE_STATUSES and not is_running(episode_id)
+    stalled = episode["status"] in ACTIVE_STATUSES and not _resume_if_stalled(episode_id, episode)
     return jsonify({
         "status": episode["status"],
         "stalled": stalled,
@@ -621,6 +656,13 @@ def export_xlsx(episode_id):
         as_attachment=True,
         download_name=f"{episode['title']}_{episode['target_lang']}.xlsx",
     )
+
+
+# Started at import so it also runs under gunicorn (single worker, see Dockerfile). Under the
+# Flask dev reloader only the serving child process (WERKZEUG_RUN_MAIN) starts it; the DB lease
+# makes an accidental second sweeper harmless anyway.
+if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+    start_stalled_sweeper()
 
 
 if __name__ == "__main__":

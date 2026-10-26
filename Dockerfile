@@ -25,4 +25,6 @@ RUN chmod +x scripts/download_voices.sh \
 ENV PORT=8080
 EXPOSE 8080
 
-CMD exec gunicorn --bind 0.0.0.0:${PORT} --workers 2 --threads 4 --timeout 0 app:app
+# One worker: the pipeline thread registry (core/jobs.py) and the TTS engine cache are per-process,
+# so a second worker allowed duplicate pipeline runs and doubled model memory (OOM kills on 2GiB).
+CMD exec gunicorn --bind 0.0.0.0:${PORT} --workers 1 --threads 8 --timeout 0 app:app

@@ -3,13 +3,19 @@
 Backend selection via TTS_BACKEND env var: sherpa_onnx | google | xtts.
 """
 import os
+import re
 import subprocess
 import tempfile
 import threading
+from collections import OrderedDict
 
 from core.voice_registry import resolve_voice_model
 
-_sherpa_engine_cache: dict[str, object] = {}
+# Each loaded voice engine costs 100-400MB (the "-high" models are the largest). Caching all of a
+# language's voices at once pushed a 2GiB Cloud Run instance over its limit and got it OOM-killed
+# mid-episode, so keep only the most recently used few and let evicted engines be garbage collected.
+_MAX_ENGINES = max(1, int(os.environ.get("TTS_MAX_ENGINES", "2")))
+_sherpa_engine_cache: "OrderedDict[str, object]" = OrderedDict()
 _sherpa_engine_lock = threading.Lock()
 
 
@@ -52,6 +58,26 @@ def _apply_pitch_tempo(wav_path: str, out_path: str, pitch_semitones: float, tem
     )
 
 
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?…])\s+")
+_MAX_CHUNK_CHARS = 200
+
+
+def _split_for_synthesis(text: str) -> list[str]:
+    """Split text into sentence-sized chunks. VITS memory use during generate() grows with input
+    length, and long narrator paragraphs were a big part of the OOM kills, so synthesize in pieces."""
+    chunks: list[str] = []
+    for sentence in _SENTENCE_SPLIT.split(text.strip()):
+        sentence = sentence.strip()
+        while len(sentence) > _MAX_CHUNK_CHARS:
+            cut = sentence.rfind(",", 0, _MAX_CHUNK_CHARS)
+            cut = cut + 1 if cut > 40 else sentence.rfind(" ", 0, _MAX_CHUNK_CHARS) + 1 or _MAX_CHUNK_CHARS
+            chunks.append(sentence[:cut].strip())
+            sentence = sentence[cut:].strip()
+        if sentence:
+            chunks.append(sentence)
+    return chunks or [text]
+
+
 class SherpaOnnxBackend(TTSBackend):
     """Offline neural TTS via sherpa-onnx running Piper/VITS voice models. No cloud, no API key."""
 
@@ -59,11 +85,9 @@ class SherpaOnnxBackend(TTSBackend):
         import sherpa_onnx
 
         key = f"{lang}:{voice_id}"
-        if key in _sherpa_engine_cache:
-            return _sherpa_engine_cache[key]
-
         with _sherpa_engine_lock:
             if key in _sherpa_engine_cache:
+                _sherpa_engine_cache.move_to_end(key)
                 return _sherpa_engine_cache[key]
             paths = resolve_voice_model(lang, voice_id)
             config = sherpa_onnx.OfflineTtsConfig(
@@ -79,18 +103,28 @@ class SherpaOnnxBackend(TTSBackend):
             )
             engine = sherpa_onnx.OfflineTts(config)
             _sherpa_engine_cache[key] = engine
+            while len(_sherpa_engine_cache) > _MAX_ENGINES:
+                _sherpa_engine_cache.popitem(last=False)
             return engine
 
     def synthesize(self, text: str, voice: dict, lang: str) -> bytes:
+        import numpy as np
         import soundfile as sf
 
         engine = self._get_engine(lang, voice["id"])
-        audio = engine.generate(text=text, sid=0, speed=1.0)
+        sample_rate = None
+        pieces = []
+        for chunk in _split_for_synthesis(text):
+            audio = engine.generate(text=chunk, sid=0, speed=1.0)
+            sample_rate = audio.sample_rate
+            pieces.append(np.asarray(audio.samples, dtype="float32"))
+            pieces.append(np.zeros(int(sample_rate * 0.15), dtype="float32"))  # short pause between sentences
+        samples = np.concatenate(pieces[:-1])
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             raw_wav = os.path.join(tmp_dir, "raw.wav")
             final_mp3 = os.path.join(tmp_dir, "final.mp3")
-            sf.write(raw_wav, audio.samples, audio.sample_rate)
+            sf.write(raw_wav, samples, sample_rate)
             _apply_pitch_tempo(raw_wav, final_mp3, voice["pitch_semitones"], voice["tempo"])
             with open(final_mp3, "rb") as f:
                 return f.read()
