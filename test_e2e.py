@@ -443,6 +443,67 @@ class EndToEndTest(unittest.TestCase):
                                  data={"text": "x", "author": "Reviewer"})
         self.assertEqual(resp.status_code, 404)
 
+    def test_align_lines_maps_words_to_lines(self):
+        from unittest.mock import patch, MagicMock
+        from core.alignment import align_lines
+        words = [{"text": w, "start": i, "end": i + 0.5} for i, w in enumerate("Il sole sorse . Che bella".split())]
+        words.insert(3, {"text": " ", "start": 2.5, "end": 3})
+        resp = MagicMock(json=lambda: {"words": words})
+        with patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test"}), \
+                patch("core.alignment.requests.post", return_value=resp) as post:
+            cues = align_lines(b"mp3", [(1, "Il sole sorse ."), (2, ""), (3, "Che bella")])
+        self.assertEqual(post.call_args.kwargs["data"]["text"], "Il sole sorse .\nChe bella")
+        self.assertEqual(cues, [{"sr_no": 1, "start": 0, "end": 3.5}, {"sr_no": 3, "start": 4, "end": 5.5}])
+
+    def test_native_review_upload_comment_and_reupload(self):
+        from unittest.mock import patch
+        episode_id = self._make_parsed_episode()
+        base = f"/episode/{episode_id}/chapter/1/native-review"
+        cues = [{"sr_no": 1, "start": 0.0, "end": 0.4}, {"sr_no": 2, "start": 0.5, "end": 0.9}]
+
+        def upload():
+            with patch("app.align_lines", return_value=cues) as align:
+                resp = self.client.post(f"{base}/native", data={"audio": (io.BytesIO(_build_silent_wav()), "ch1.wav")},
+                                        content_type="multipart/form-data")
+            self.assertEqual(resp.status_code, 302)
+            return align
+
+        align = upload()
+        self.assertEqual(align.call_args.args[1], [(1, "Il sole sorse sulle colline."), (2, "Che bella mattina.")])
+        track = db.get_episode(episode_id)["chapters"][0]["native_review"]["native"]
+        self.assertEqual(track["cues"], cues)
+
+        resp = self.client.get(f"/episode/{episode_id}/audio/{track['audio_path']}", headers={"Range": "bytes=0-9"})
+        self.assertEqual(resp.status_code, 206)
+        self.assertEqual(len(resp.data), 10)
+
+        resp = self.client.post(f"{base}/native/comments", data={"time": "0.6", "sr_no": "2", "text": "Wrong stress"})
+        comment = resp.get_json()
+        self.assertEqual((comment["sr_no"], comment["time"]), (2, 0.6))
+
+        page = self.client.get(f"/episode/{episode_id}/native-review")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"Wrong stress", page.data)
+
+        self.assertEqual(self.client.post(f"{base}/native/comments", data={"text": "no time"}).status_code, 400)
+        self.assertEqual(self.client.post(f"{base}/xx/comments", data={"time": "1", "text": "x"}).status_code, 404)
+        self.assertEqual(self.client.post(f"/episode/{episode_id}/chapter/9/native-review/en").status_code, 404)
+
+        self.client.post(f"{base}/native/comments/{comment['id']}/delete")
+        self.client.post(f"{base}/native/comments", data={"time": "0.1", "text": "Second"})
+        upload()
+        self.assertEqual(db.get_episode(episode_id)["chapters"][0]["native_review"]["native"]["comments"], [])
+
+    def test_native_review_upload_failure_shows_error(self):
+        from unittest.mock import patch
+        episode_id = self._make_parsed_episode()
+        with patch("app.align_lines", side_effect=RuntimeError("401 Unauthorized")):
+            resp = self.client.post(f"/episode/{episode_id}/chapter/1/native-review/en",
+                                    data={"audio": (io.BytesIO(_build_silent_wav()), "ch1.wav")},
+                                    content_type="multipart/form-data", follow_redirects=True)
+        self.assertIn(b"401 Unauthorized", resp.data)
+        self.assertNotIn("native_review", db.get_episode(episode_id)["chapters"][0])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

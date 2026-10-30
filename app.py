@@ -1,6 +1,7 @@
 """Audiobook Translation Review Platform. Language-first navigation; MongoDB persistence;
 pipeline runs synchronously in the request; results rendered dynamically from the episode doc.
 """
+import io
 import logging
 import os
 import threading
@@ -13,9 +14,10 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, abort, Response
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, abort
 
-from core import db, storage
+from core import db, storage, native_review
+from core.alignment import align_lines
 from core.exports import build_docx_export, build_xlsx_export
 from core.jobs import start_pipeline, start_audio_repair
 from core.jobs import is_running
@@ -235,8 +237,7 @@ def episode_delete(episode_id):
 
 @app.route("/episode/<episode_id>/audio/<path:filename>")
 def episode_audio(episode_id, filename):
-    data = storage.read_bytes(episode_id, f"audio/{filename}")
-    return Response(data, mimetype="audio/mpeg")
+    return send_file(io.BytesIO(storage.read_bytes(episode_id, f"audio/{filename}")), mimetype="audio/mpeg")
 
 
 @app.route("/episode/<episode_id>/row/<int:sr_no>", methods=["POST"])
@@ -656,6 +657,62 @@ def export_xlsx(episode_id):
         as_attachment=True,
         download_name=f"{episode['title']}_{episode['target_lang']}.xlsx",
     )
+
+
+def _episode_chapter(episode_id: str, chapter_number: int) -> tuple[dict, dict]:
+    episode = db.get_episode(episode_id) or abort(404)
+    chapter = next((c for c in episode["chapters"] if c["chapter_number"] == chapter_number), None) or abort(404)
+    return episode, chapter
+
+
+@app.route("/episode/<episode_id>/native-review")
+def native_review_page(episode_id):
+    episode = db.get_episode(episode_id) or abort(404)
+    chapters = [{
+        "number": c["chapter_number"],
+        "title": c["title"],
+        "lines": {r["sr_no"]: {"speaker": r["speaker"], "en": r["english"], "native": r["reviewer_text"]} for r in c["rows"]},
+        "tracks": {key: {"cues": t["cues"], "comments": [_serialize_comment(cm) for cm in t["comments"]],
+                         "url": url_for("episode_audio", episode_id=episode_id, filename=t["audio_path"],
+                                        v=int(t["uploaded_at"].timestamp()))}
+                   for key, t in c.get("native_review", {}).items()},
+    } for c in episode["chapters"]]
+    return render_template("native_review.html", episode=episode, chapters=chapters, error=request.args.get("error"))
+
+
+@app.route("/episode/<episode_id>/chapter/<int:chapter_number>/native-review/<any(en, native):track>", methods=["POST"])
+def upload_native_review_audio(episode_id, chapter_number, track):
+    _, chapter = _episode_chapter(episode_id, chapter_number)
+    file = request.files.get("audio") or abort(400)
+    field = "english" if track == "en" else "reviewer_text"
+    try:
+        mp3 = transcode_to_mp3(file.read(), file.filename or "upload")
+        cues = align_lines(mp3, [(r["sr_no"], r[field]) for r in chapter["rows"]])
+    except Exception as exc:
+        app.logger.exception("native review upload failed")
+        return redirect(url_for("native_review_page", episode_id=episode_id,
+                                error=f"Chapter {chapter_number}: {exc}", _anchor=f"chapter-{chapter_number}"))
+    filename = f"final_ch{chapter_number}_{track}.mp3"
+    storage.save_bytes(episode_id, f"audio/{filename}", mp3)
+    native_review.set_track(episode_id, chapter_number, track, filename, cues)
+    return redirect(url_for("native_review_page", episode_id=episode_id, _anchor=f"chapter-{chapter_number}"))
+
+
+@app.route("/episode/<episode_id>/chapter/<int:chapter_number>/native-review/<any(en, native):track>/comments", methods=["POST"])
+def add_native_review_comment(episode_id, chapter_number, track):
+    text = request.form.get("text", "").strip()
+    time_ = request.form.get("time", type=float)
+    if not text or time_ is None:
+        abort(400)
+    comment = native_review.add_comment(episode_id, chapter_number, track, time_,
+                                        request.form.get("sr_no", type=int), text)
+    return jsonify(_serialize_comment(comment))
+
+
+@app.route("/episode/<episode_id>/chapter/<int:chapter_number>/native-review/<any(en, native):track>/comments/<comment_id>/delete", methods=["POST"])
+def delete_native_review_comment(episode_id, chapter_number, track, comment_id):
+    native_review.delete_comment(episode_id, chapter_number, track, comment_id)
+    return jsonify({"ok": True})
 
 
 # Started at import so it also runs under gunicorn (single worker, see Dockerfile). Under the
