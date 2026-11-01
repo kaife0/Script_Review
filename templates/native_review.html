@@ -1,11 +1,16 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 {% set tracks = [("en", "English"), ("native", episode.target_lang_name)] %}
 {% block title %}{{ episode.title }} — Final Audio Review{% endblock %}
 {% block head %}
 <style>
   [hidden] { display: none !important; }
   .nr-chapter { padding: 1.25rem 1.4rem; margin-bottom: 1.5rem; overflow: visible; scroll-margin-top: 1rem; }
-  .nr-chapter h2 { margin: 0 0 1rem; }
+  .nr-chapter-head { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .nr-chapter-head h2 { margin: 0; }
+  .nr-chapter.verified { border-color: #86efac; }
+  .nr-upload-status { width: 100%; font-size: 0.8rem; color: var(--text-muted); }
+  .nr-upload-status.error { color: var(--fail-text); }
   .nr-uploads { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
   .nr-uploads form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
   .nr-uploads label { width: 100%; margin: 0; }
@@ -27,7 +32,7 @@
     border: 1px solid var(--border); border-radius: 8px; }
   .nr-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1rem; }
   .nr-columns h3 { font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); margin: 0 0 0.5rem; }
-  .nr-list { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto;
+  .nr-list { position: relative; list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto;
     border: 1px solid var(--border); border-radius: 8px; }
   .nr-list li { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
   .nr-list li:last-child { border-bottom: 0; }
@@ -43,21 +48,25 @@
 {% endblock %}
 {% block body %}
 <a class="back-link" href="{{ url_for('episode_view', episode_id=episode._id) }}">&larr; Script review</a>
-<h1>{{ episode.title }} — Final Audio Review</h1>
-<p class="meta">Upload the final edited audio for each chapter, then listen with captions and leave time-stamped comments.</p>
-{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+<h1>{{ episode.title }} — Final Audio Review {{ macros.final_audio_badge(final_status) }}</h1>
+<p class="meta">Upload the final edited audio for each chapter, listen with captions, leave time-stamped comments, then mark each chapter verified.</p>
 
 {% for ch in chapters %}
-<section class="panel nr-chapter" id="chapter-{{ ch.number }}">
-  <h2>Chapter {{ ch.number }} · {{ ch.title }}</h2>
+<section class="panel nr-chapter{{ ' verified' if ch.verified }}" id="chapter-{{ ch.number }}">
+  <div class="nr-chapter-head">
+    <h2>Chapter {{ ch.number }} · {{ ch.title }}</h2>
+    <button type="button" class="btn btn-sm {{ 'btn-secondary' if ch.verified }}" data-verify
+            {% if not ch.uploaded %}disabled title="Upload both audios first"{% endif %}>
+      {{ "Verified ✓ (undo)" if ch.verified else "Mark verified" }}
+    </button>
+  </div>
   <div class="nr-uploads">
     {% for key, label in tracks %}
-    <form method="post" enctype="multipart/form-data" data-pending-text="Uploading and syncing…"
-          action="{{ url_for('upload_native_review_audio', episode_id=episode._id, chapter_number=ch.number, track=key) }}"
-          {% if ch.tracks[key] %}data-confirm="Replace the {{ label }} audio? Its comments will be cleared."{% endif %}>
+    <form data-upload="{{ key }}" data-label="{{ label }}" {% if ch.tracks[key] %}data-replace{% endif %}>
       <label>{{ label }} audio {% if ch.tracks[key] %}<span class="badge badge-ok">uploaded</span>{% endif %}</label>
       <input type="file" name="audio" accept="audio/*" required>
       <button class="btn btn-sm" type="submit">{{ "Replace" if ch.tracks[key] else "Upload" }}</button>
+      <span class="nr-upload-status"></span>
     </form>
     {% endfor %}
   </div>
@@ -66,7 +75,7 @@
   <div class="nr-player">
     <div class="nr-toolbar">
       <div class="nr-seg">{% for key, label in tracks %}<button type="button" data-track="{{ key }}" {% if not ch.tracks[key] %}disabled{% endif %}>{{ label }}</button>{% endfor %}</div>
-      <div class="nr-seg"><button type="button" data-speed="0.5">0.5x</button><button type="button" data-speed="1" class="active">1.0x</button></div>
+      <div class="nr-seg"><button type="button" data-speed="0.5">0.5x</button><button type="button" data-speed="0.75">0.75x</button><button type="button" data-speed="1" class="active">1.0x</button></div>
     </div>
     <audio controls preload="metadata"></audio>
     <div class="nr-caption"><div class="nr-main"></div><div class="nr-sub"></div></div>

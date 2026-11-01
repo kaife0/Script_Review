@@ -19,7 +19,7 @@ _sherpa_engine_cache: "OrderedDict[str, object]" = OrderedDict()
 _sherpa_engine_lock = threading.Lock()
 
 
-def transcode_to_mp3(raw_bytes: bytes, filename_hint: str = "upload") -> bytes:
+def transcode_to_mp3(raw_bytes: bytes, filename_hint: str = "upload", bitrate: str | None = None) -> bytes:
     """Transcode arbitrary browser-recorded/uploaded audio (webm/ogg/wav/mp3/m4a) to mp3 via
     ffmpeg, for consistent playback and standalone HTML export. Raises
     subprocess.CalledProcessError on unreadable/corrupt input."""
@@ -29,7 +29,8 @@ def transcode_to_mp3(raw_bytes: bytes, filename_hint: str = "upload") -> bytes:
         with open(src_path, "wb") as f:
             f.write(raw_bytes)
         subprocess.run(
-            ["ffmpeg", "-y", "-i", src_path, "-codec:a", "libmp3lame", "-qscale:a", "4", out_path],
+            ["ffmpeg", "-y", "-i", src_path, "-codec:a", "libmp3lame",
+             *(["-b:a", bitrate] if bitrate else ["-qscale:a", "4"]), out_path],
             check=True, capture_output=True,
         )
         with open(out_path, "rb") as f:

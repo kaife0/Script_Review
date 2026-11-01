@@ -136,7 +136,7 @@ def release_pipeline_lease(episode_id: str, owner: str) -> None:
 def pipeline_lease_active(episode_id: str) -> bool:
     doc = episodes_collection().find_one({"_id": ObjectId(episode_id)}, {"pipeline_lease_until": 1})
     until = doc.get("pipeline_lease_until") if doc else None
-    return bool(until) and until > _now()
+    return bool(until) and until.replace(tzinfo=timezone.utc) > _now()
 
 
 def list_stalled_episode_ids(active_statuses) -> list[str]:

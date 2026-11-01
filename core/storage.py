@@ -4,7 +4,9 @@ Cloud Run's filesystem is ephemeral, so uploads/audio live in a GCS bucket
 (GCS_BUCKET env var) instead of local disk. Falls back to a local directory
 when GCS_BUCKET is unset, so local development needs no GCP credentials.
 """
+import glob
 import os
+import time
 
 _BUCKET_NAME = os.environ.get("GCS_BUCKET")
 _LOCAL_ROOT = os.environ.get("AUDIO_ROOT", os.path.join(os.path.dirname(__file__), "..", "jobs"))
@@ -43,6 +45,37 @@ def read_bytes(episode_id: str, relative_path: str) -> bytes:
     full_path = os.path.join(_LOCAL_ROOT, episode_id, relative_path)
     with open(full_path, "rb") as f:
         return f.read()
+
+
+def size(episode_id: str, relative_path: str) -> int:
+    if using_gcs():
+        blob = _bucket_client().get_blob(f"{episode_id}/{relative_path}")
+        if blob is None:
+            raise FileNotFoundError(relative_path)
+        return blob.size
+    return os.path.getsize(os.path.join(_LOCAL_ROOT, episode_id, relative_path))
+
+
+def read_range(episode_id: str, relative_path: str, start: int, end: int) -> bytes:
+    if using_gcs():
+        return _bucket_client().blob(f"{episode_id}/{relative_path}").download_as_bytes(start=start, end=end)
+    with open(os.path.join(_LOCAL_ROOT, episode_id, relative_path), "rb") as f:
+        f.seek(start)
+        return f.read(end - start + 1)
+
+
+def delete_stale(pattern: str, max_age_seconds: int) -> int:
+    cutoff = time.time() - max_age_seconds
+    if using_gcs():
+        stale = [b for b in _bucket_client().list_blobs(match_glob=f"*/{pattern}") if b.updated.timestamp() < cutoff]
+        for blob in stale:
+            blob.delete()
+        return len(stale)
+    stale = [p for p in glob.glob(os.path.join(_LOCAL_ROOT, "*", pattern), recursive=True)
+             if os.path.isfile(p) and os.path.getmtime(p) < cutoff]
+    for path in stale:
+        os.remove(path)
+    return len(stale)
 
 
 def exists(episode_id: str, relative_path: str) -> bool:

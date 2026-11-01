@@ -51,3 +51,7 @@
   </div>
 {% endif %}
 {% endmacro %}
+
+{% macro final_audio_badge(status) %}
+<span class="badge {{ {'verified': 'badge-ok', 'uploaded': 'badge-info'}.get(status, 'badge-warn') }}" data-final-status>final audio {{ status }}</span>
+{% endmacro %}

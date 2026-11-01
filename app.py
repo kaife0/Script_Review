@@ -1,9 +1,9 @@
 """Audiobook Translation Review Platform. Language-first navigation; MongoDB persistence;
 pipeline runs synchronously in the request; results rendered dynamically from the episode doc.
 """
-import io
 import logging
 import os
+import subprocess
 import threading
 import time
 from functools import wraps
@@ -14,7 +14,9 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, abort
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, abort, Response
+from werkzeug.datastructures import ContentRange
+from werkzeug.utils import secure_filename
 
 from core import db, storage, native_review
 from core.alignment import align_lines
@@ -28,6 +30,9 @@ from core.tts import transcode_to_mp3
 from config.languages import SUPPORTED_LANGUAGES, get_language, has_tts_backend
 
 MAX_REVIEWER_AUDIO_BYTES = 15 * 1024 * 1024
+AUDIO_CHUNK_BYTES = 2 * 1024 * 1024
+UPLOAD_PART_BYTES = 16 * 1024 * 1024
+STALE_UPLOAD_SECONDS = 3 * 60 * 60
 
 app = Flask(__name__)
 try:
@@ -95,6 +100,7 @@ def lang_dashboard(lang_code):
         ep["chapter_count"] = len(ep["chapters"])
         ep["review_percent"] = db.review_percent(ep["_id"]) if ep["status"] in (
             db.STATUS_TTS_DONE, db.STATUS_REVIEWED) else 0
+        ep["final_audio_status"] = native_review.final_audio_status(ep)
     return render_template("lang_dashboard.html", lang=lang, episodes=episodes)
 
 
@@ -172,8 +178,19 @@ def _stalled_sweeper(interval_seconds: int = 60) -> None:
         time.sleep(interval_seconds)
 
 
+def _upload_cleaner(interval_seconds: int = 3600) -> None:
+    while True:
+        try:
+            if removed := storage.delete_stale("uploads/final/**", STALE_UPLOAD_SECONDS):
+                app.logger.info("upload cleaner: removed %d abandoned upload parts", removed)
+        except Exception:
+            app.logger.exception("upload cleaner: failed")
+        time.sleep(interval_seconds)
+
+
 def start_stalled_sweeper() -> None:
     threading.Thread(target=_stalled_sweeper, daemon=True, name="stalled-sweeper").start()
+    threading.Thread(target=_upload_cleaner, daemon=True, name="upload-cleaner").start()
 
 
 @app.route("/episode/<episode_id>/status")
@@ -237,7 +254,23 @@ def episode_delete(episode_id):
 
 @app.route("/episode/<episode_id>/audio/<path:filename>")
 def episode_audio(episode_id, filename):
-    return send_file(io.BytesIO(storage.read_bytes(episode_id, f"audio/{filename}")), mimetype="audio/mpeg")
+    path = f"audio/{filename}"
+    try:
+        total = storage.size(episode_id, path)
+    except FileNotFoundError:
+        abort(404)
+    byte_range = request.range.range_for_length(total) if request.range else None
+    start, stop = byte_range or (0, total)
+    if byte_range:
+        stop = min(stop, start + AUDIO_CHUNK_BYTES)
+    resp = Response(storage.read_range(episode_id, path, start, stop - 1),
+                    206 if byte_range else 200, mimetype="audio/mpeg")
+    resp.accept_ranges = "bytes"
+    if byte_range:
+        resp.content_range = ContentRange("bytes", start, stop, total)
+    if "v" in request.args:
+        resp.headers["Cache-Control"] = "private, max-age=31536000, immutable"
+    return resp
 
 
 @app.route("/episode/<episode_id>/row/<int:sr_no>", methods=["POST"])
@@ -671,34 +704,67 @@ def native_review_page(episode_id):
     chapters = [{
         "number": c["chapter_number"],
         "title": c["title"],
+        "verified": bool(c.get("final_audio_verified")),
+        "uploaded": native_review.chapter_uploaded(c),
         "lines": {r["sr_no"]: {"speaker": r["speaker"], "en": r["english"], "native": r["reviewer_text"]} for r in c["rows"]},
         "tracks": {key: {"cues": t["cues"], "comments": [_serialize_comment(cm) for cm in t["comments"]],
                          "url": url_for("episode_audio", episode_id=episode_id, filename=t["audio_path"],
                                         v=int(t["uploaded_at"].timestamp()))}
                    for key, t in c.get("native_review", {}).items()},
     } for c in episode["chapters"]]
-    return render_template("native_review.html", episode=episode, chapters=chapters, error=request.args.get("error"))
+    return render_template("native_review.html", episode=episode, chapters=chapters,
+                           final_status=native_review.final_audio_status(episode))
 
 
-@app.route("/episode/<episode_id>/chapter/<int:chapter_number>/native-review/<any(en, native):track>", methods=["POST"])
-def upload_native_review_audio(episode_id, chapter_number, track):
+NATIVE_REVIEW_TRACK = "/episode/<episode_id>/chapter/<int:chapter_number>/native-review/<any(en, native):track>"
+
+
+def _take_upload_parts(episode_id: str, upload_id, read: bool = True) -> bytes:
+    folder = f"uploads/final/{upload_id}"
+    parts = sorted(storage.list_files(episode_id, folder))
+    raw = b"".join(storage.read_bytes(episode_id, f"{folder}/{p}") for p in parts) if read else b""
+    for p in parts:
+        storage.delete_file(episode_id, f"{folder}/{p}")
+    return raw
+
+
+@app.route(f"{NATIVE_REVIEW_TRACK}/parts/<uuid:upload_id>/abort", methods=["POST"])
+def abort_native_review_upload(episode_id, chapter_number, track, upload_id):
+    _take_upload_parts(episode_id, upload_id, read=False)
+    return jsonify({"ok": True})
+
+
+@app.route(f"{NATIVE_REVIEW_TRACK}/parts/<uuid:upload_id>/<int:index>", methods=["POST"])
+def upload_native_review_part(episode_id, chapter_number, track, upload_id, index):
+    data = request.get_data()
+    if not data or len(data) > UPLOAD_PART_BYTES:
+        abort(400)
+    storage.save_bytes(episode_id, f"uploads/final/{upload_id}/{index:05d}", data)
+    return jsonify({"ok": True})
+
+
+@app.route(f"{NATIVE_REVIEW_TRACK}/parts/<uuid:upload_id>/finish", methods=["POST"])
+def finish_native_review_upload(episode_id, chapter_number, track, upload_id):
     _, chapter = _episode_chapter(episode_id, chapter_number)
-    file = request.files.get("audio") or abort(400)
-    field = "english" if track == "en" else "reviewer_text"
+    raw = _take_upload_parts(episode_id, upload_id)
+    if not raw:
+        abort(400)
     try:
-        mp3 = transcode_to_mp3(file.read(), file.filename or "upload")
-        cues = align_lines(mp3, [(r["sr_no"], r[field]) for r in chapter["rows"]])
+        mp3 = transcode_to_mp3(raw, secure_filename(request.form.get("filename", "")) or "upload", bitrate="192k")
+    except subprocess.CalledProcessError:
+        return jsonify({"error": "Could not read this audio file."}), 422
+    try:
+        cues = align_lines(mp3, [(r["sr_no"], r[native_review.TEXT_FIELDS[track]]) for r in chapter["rows"]])
     except Exception as exc:
-        app.logger.exception("native review upload failed")
-        return redirect(url_for("native_review_page", episode_id=episode_id,
-                                error=f"Chapter {chapter_number}: {exc}", _anchor=f"chapter-{chapter_number}"))
+        app.logger.exception("caption sync failed")
+        return jsonify({"error": f"Caption sync failed: {exc}"}), 502
     filename = f"final_ch{chapter_number}_{track}.mp3"
     storage.save_bytes(episode_id, f"audio/{filename}", mp3)
     native_review.set_track(episode_id, chapter_number, track, filename, cues)
-    return redirect(url_for("native_review_page", episode_id=episode_id, _anchor=f"chapter-{chapter_number}"))
+    return jsonify({"ok": True})
 
 
-@app.route("/episode/<episode_id>/chapter/<int:chapter_number>/native-review/<any(en, native):track>/comments", methods=["POST"])
+@app.route(f"{NATIVE_REVIEW_TRACK}/comments", methods=["POST"])
 def add_native_review_comment(episode_id, chapter_number, track):
     text = request.form.get("text", "").strip()
     time_ = request.form.get("time", type=float)
@@ -709,10 +775,20 @@ def add_native_review_comment(episode_id, chapter_number, track):
     return jsonify(_serialize_comment(comment))
 
 
-@app.route("/episode/<episode_id>/chapter/<int:chapter_number>/native-review/<any(en, native):track>/comments/<comment_id>/delete", methods=["POST"])
+@app.route(f"{NATIVE_REVIEW_TRACK}/comments/<comment_id>/delete", methods=["POST"])
 def delete_native_review_comment(episode_id, chapter_number, track, comment_id):
     native_review.delete_comment(episode_id, chapter_number, track, comment_id)
     return jsonify({"ok": True})
+
+
+@app.route("/episode/<episode_id>/chapter/<int:chapter_number>/native-review/verify", methods=["POST"])
+def verify_native_review_chapter(episode_id, chapter_number):
+    _, chapter = _episode_chapter(episode_id, chapter_number)
+    verified = request.form.get("verified") == "true"
+    if verified and not native_review.chapter_uploaded(chapter):
+        abort(400)
+    native_review.set_verified(episode_id, chapter_number, verified)
+    return jsonify({"verified": verified, "status": native_review.final_audio_status(db.get_episode(episode_id))})
 
 
 # Started at import so it also runs under gunicorn (single worker, see Dockerfile). Under the
