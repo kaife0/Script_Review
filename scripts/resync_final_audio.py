@@ -12,6 +12,7 @@ reencode = "--reencode" in sys.argv
 
 for episode in db.episodes_collection().find({"chapters.native_review": {"$exists": True}}):
     episode_id = str(episode["_id"])
+    episode["_id"] = episode_id
     for chapter in episode["chapters"]:
         for track, data in chapter.get("native_review", {}).items():
             path = f"audio/{data['audio_path']}"
@@ -22,5 +23,5 @@ for episode in db.episodes_collection().find({"chapters.native_review": {"$exist
             cues = align_lines(mp3, lines)
             if reencode:
                 storage.save_bytes(episode_id, path, mp3)
-            native_review.resync_track(episode_id, chapter["chapter_number"], track, cues, data["comments"])
+            native_review.resync_track(episode, chapter["chapter_number"], track, cues, data["comments"])
             print(f"{episode['title']} | ch {chapter['chapter_number']} | {track}: {len(cues)}/{len(lines)} lines synced")

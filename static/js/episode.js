@@ -135,13 +135,67 @@
     btn.disabled = true;
     const originalText = btn.textContent;
     btn.textContent = "Regenerating…";
-    post(url).then(data => {
-      btn.disabled = false;
-      btn.textContent = originalText;
-      if (!data.ok) { alert(data.error || "Failed to regenerate audio."); return; }
-      location.reload();
-    });
+    fetch(url, { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" } })
+      .then(r => r.json().catch(() => ({ ok: false, error: `Server error (${r.status})` })))
+      .catch(() => ({ ok: false, error: "Network error." }))
+      .then(data => {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        if (!data.ok) { alert(data.error || "Failed to regenerate audio."); return; }
+        btn.parentElement.querySelector(".stale-audio-badge")?.remove();
+        if (data.audio_url) showAudio(isTitle ? locator : null, isTitle ? null : locator, data.audio_url);
+      });
   });
+
+  function showAudio(titleLocator, srNo, url) {
+    let audio, holder;
+    if (titleLocator) {
+      audio = document.querySelector(`audio[data-title-audio="${titleLocator}"]`);
+      if (!audio) { location.reload(); return; }
+    } else {
+      holder = document.querySelector(`.audio-strip[data-audio-slot="${srNo}"] .audio-lane[data-lane="tts"]`);
+      if (!holder) return;
+      audio = holder.querySelector("audio");
+    }
+    if (!audio) {
+      const wrap = document.createElement("span");
+      wrap.className = "audio-player";
+      audio = document.createElement("audio");
+      audio.controls = true;
+      wrap.append(audio, buildSkipControls());
+      const placeholder = holder.querySelector(".audio-generating, .no-audio");
+      if (placeholder) placeholder.replaceWith(wrap); else holder.appendChild(wrap);
+    }
+    audio.preload = "metadata";
+    audio.src = url;
+    audio.load();
+  }
+
+  const lazyAudio = new IntersectionObserver(entries => {
+    for (const { target, isIntersecting } of entries) {
+      if (!isIntersecting) continue;
+      lazyAudio.unobserve(target);
+      if (target.paused && target.readyState === 0) {
+        target.preload = "metadata";
+        target.load();
+      }
+    }
+  }, { rootMargin: "400px 0px" });
+  document.querySelectorAll("audio[data-lazy]").forEach(a => lazyAudio.observe(a));
+
+  const more = document.querySelector(".more");
+  if (more) {
+    const toggle = more.querySelector(".more-toggle");
+    toggle.addEventListener("click", () => {
+      toggle.setAttribute("aria-expanded", String(more.classList.toggle("open")));
+    });
+    document.addEventListener("click", e => {
+      if (!more.contains(e.target) || e.target.closest(".more-items .btn")) {
+        more.classList.remove("open");
+        toggle.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
 
   // ---- fill in a blank AI-translated row on demand ----
   document.addEventListener("click", e => {

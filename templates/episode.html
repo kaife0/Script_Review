@@ -232,10 +232,38 @@
 
   .title-reviewer-block { margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px dashed var(--border); }
 
+  .more { position: relative; display: contents; }
+  .more-toggle { display: none; }
+  .more-items { display: contents; }
+
   @media (max-width: 1150px) {
     .boxes { grid-template-columns: 1fr; }
     .box { border-right: none; border-bottom: 1px solid var(--border); }
     .box:last-child { border-bottom: none; }
+  }
+
+  @media (max-width: 900px) {
+    .page { padding: 0 1rem 3rem; }
+    .topbar { margin: 0 -1rem; padding: 0.5rem 1rem; }
+    .topbar-main { gap: 0.5rem; }
+    .topbar h1 { font-size: 1.05rem; }
+    .topbar .meta { display: none; }
+    .actions { width: 100%; flex-wrap: nowrap; }
+    .actions > .btn { flex: 1; justify-content: center; }
+    .more { display: block; }
+    .more-toggle { display: inline-flex; }
+    .more-items { display: none; position: absolute; right: 0; top: calc(100% + 0.35rem); z-index: 40;
+      flex-direction: column; gap: 0.35rem; min-width: 210px; padding: 0.5rem; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(16,24,40,0.15); }
+    .more.open .more-items { display: flex; }
+    .more-items .btn { justify-content: flex-start; }
+    .controlbar, .chapter-head { position: static; }
+    .legend { display: none; }
+    .verify-progress { min-width: 0; flex-basis: 100%; }
+    .filters { flex-wrap: wrap; }
+    .btn, .btn-sm, .filter-btn { min-height: 36px; }
+    .audio-player, .audio-strip audio { min-width: 0; width: 100%; }
+    .reviewer-textarea { font-size: 16px; }
   }
 </style>
 </head>
@@ -255,10 +283,15 @@
       </div>
       <div class="actions">
         <button type="button" class="btn" id="jump-next">Jump to next unreviewed &darr;</button>
-        <a class="btn btn-secondary" href="{{ url_for('native_review_page', episode_id=episode._id) }}">Final Audio Review</a>
-        <a class="btn btn-secondary" href="{{ url_for('export_docx', episode_id=episode._id) }}">Export Word</a>
-        <a class="btn btn-secondary" href="{{ url_for('export_xlsx', episode_id=episode._id) }}">Export Excel</a>
-        <button type="button" class="btn btn-secondary" data-help-open><span class="help-trigger-mark">?</span> Help</button>
+        <div class="more">
+          <button type="button" class="btn btn-secondary more-toggle" aria-expanded="false">&#8943; More</button>
+          <div class="more-items">
+            <a class="btn btn-secondary" href="{{ url_for('native_review_page', episode_id=episode._id) }}">Final Audio Review</a>
+            <a class="btn btn-secondary" href="{{ url_for('export_docx', episode_id=episode._id) }}">Export Word</a>
+            <a class="btn btn-secondary" href="{{ url_for('export_xlsx', episode_id=episode._id) }}">Export Excel</a>
+            <button type="button" class="btn btn-secondary" data-help-open><span class="help-trigger-mark">?</span> Help</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -343,7 +376,7 @@
         {% endif %}
       </div>
       {% if episode.title_audio_path %}
-        {{ macros.audio_tag(episode._id, episode.title_audio_path, standalone, 'style="width:240px"') }}
+        {{ macros.audio_tag(episode._id, episode.title_audio_path, standalone, 'style="width:240px" data-title-audio="episode"', src=title_audio_url(episode._id, episode)) }}
       {% endif %}
     </div>
     {% if not standalone %}
@@ -378,7 +411,7 @@
       <div class="audio-strip" style="border-top:none; background:transparent; padding-left:0;">
         <span class="strip-label">Chapter title audio</span>
         {% if chapter.title_audio_path %}
-          {{ macros.audio_tag(episode._id, chapter.title_audio_path, standalone) }}
+          {{ macros.audio_tag(episode._id, chapter.title_audio_path, standalone, 'data-title-audio="chapter:' ~ chapter.chapter_number ~ '"', src=title_audio_url(episode._id, chapter)) }}
         {% elif not standalone and audio_in_progress %}
           <span class="audio-generating"><span class="mini-spinner"></span>Generating audio&hellip;</span>
         {% else %}
@@ -578,7 +611,7 @@
        data-verified-rows="{{ verified_rows }}"
        data-total-rows="{{ total_rows }}"
        data-audio-in-progress="{{ 'true' if audio_in_progress else 'false' }}"></div>
-  <script src="{{ url_for('static', filename='js/episode.js') }}" defer></script>
+  <script src="{{ static_url('js/episode.js') }}" defer></script>
   {% endif %}
 </div>
 </body>

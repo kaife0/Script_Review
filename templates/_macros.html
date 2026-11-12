@@ -1,9 +1,9 @@
-{% macro audio_tag(episode_id, audio_path, standalone, extra_attrs="") %}
+{% macro audio_tag(episode_id, audio_path, standalone, extra_attrs="", src=None) %}
 {% if standalone %}
 <audio controls preload="metadata" {{ extra_attrs }} src="audio/{{ audio_path }}"></audio>
 {% else %}
 <span class="audio-player">
-<audio controls preload="metadata" {{ extra_attrs }} src="{{ url_for('episode_audio', episode_id=episode_id, filename=audio_path) }}"></audio>
+<audio controls preload="none" data-lazy {{ extra_attrs }} src="{{ src or audio_url(episode_id, audio_path) }}"></audio>
 <span class="audio-skip-controls">
   <button type="button" class="audio-skip-btn" data-skip="-10" title="Back 10s">&laquo;10</button>
   <button type="button" class="audio-skip-btn" data-skip="-5" title="Back 5s">&lsaquo;5</button>
@@ -25,7 +25,7 @@
   <div class="audio-lane" data-lane="tts">
     <span class="audio-source-badge tts {{ 'is-primary' if source == 'tts' }}">AI narration{{ ' (primary)' if source == 'tts' }}</span>
     {% if row.audio_path %}
-      {{ audio_tag(episode_id, row.audio_path, standalone) }}
+      {{ audio_tag(episode_id, row.audio_path, standalone, src=row_audio_url(episode_id, row)) }}
       {% if source != 'tts' %}
         <button type="button" class="btn btn-secondary btn-sm" data-action="use-tts-audio" data-locator="{{ row.sr_no }}">Use as primary</button>
       {% endif %}
@@ -40,7 +40,7 @@
   <div class="audio-lane" data-lane="reviewer">
     <span class="audio-source-badge reviewer {{ 'is-primary' if source == 'reviewer' }}">Reviewer audio{{ ' (primary)' if source == 'reviewer' }}</span>
     {% if row.reviewer_audio_path %}
-      {{ audio_tag(episode_id, row.reviewer_audio_path, standalone) }}
+      {{ audio_tag(episode_id, row.reviewer_audio_path, standalone, src=audio_url(episode_id, row.reviewer_audio_path, row.reviewer_audio_version)) }}
       {% if source != 'reviewer' %}
         <button type="button" class="btn btn-secondary btn-sm" data-action="use-reviewer-audio" data-locator="{{ row.sr_no }}">Use as primary</button>
       {% endif %}

@@ -87,6 +87,33 @@ def list_episodes_for_language(target_lang: str) -> list[dict]:
     return docs
 
 
+_SUMMARY_FIELDS = {
+    "title": 1, "status": 1, "created_at": 1, "target_lang": 1,
+    "chapters.chapter_number": 1, "chapters.final_audio_verified": 1,
+    "chapters.native_review.en.audio_path": 1, "chapters.native_review.native.audio_path": 1,
+    "chapters.rows.human_verified": 1, "english_key": 1,
+}
+
+
+def list_link_candidates(exclude_lang: str) -> list[dict]:
+    docs = episodes_collection().find({"target_lang": {"$ne": exclude_lang}, "chapters.0": {"$exists": True}},
+                                      {"title": 1, "target_lang_name": 1, "english_key": 1}).sort("title", 1)
+    return [{**d, "_id": str(d["_id"])} for d in docs]
+
+
+def list_episode_summaries(target_lang: str) -> list[dict]:
+    docs = list(episodes_collection().find({"target_lang": target_lang}, _SUMMARY_FIELDS).sort("created_at", -1))
+    for doc in docs:
+        doc["_id"] = str(doc["_id"])
+        _normalize_status(doc)
+    return docs
+
+
+def count_verified(episode: dict) -> tuple[int, int]:
+    rows = [r for c in episode.get("chapters", []) for r in c["rows"]]
+    return sum(1 for r in rows if r.get("human_verified")), len(rows)
+
+
 def list_target_languages() -> list[str]:
     return episodes_collection().distinct("target_lang")
 
@@ -165,6 +192,7 @@ def set_episode_title_translation(episode_id: str, translated_title: str, audio_
         title_comments={t: [] for t in TITLE_COMMENT_TARGETS},
         title_audio_status="done" if audio_path else "pending",
         title_audio_generated_from_text=translated_title if audio_path else None,
+        title_audio_version=int(_now().timestamp() * 1000),
     )
 
 
@@ -259,7 +287,8 @@ def audio_statuses(episode_id: str) -> list[dict]:
         {"$replaceRoot": {"newRoot": "$rows"}},
         {"$project": {"_id": 0, "sr_no": 1, "audio_status": 1, "audio_path": 1,
                        "reviewer_audio_path": 1, "reviewer_audio_status": 1,
-                       "audio_source": 1, "audio_generated_from_text": 1, "reviewer_text": 1}},
+                       "audio_source": 1, "audio_generated_from_text": 1, "reviewer_text": 1,
+                       "audio_version": 1, "reviewer_audio_version": 1}},
     ]
     return list(episodes_collection().aggregate(pipeline))
 

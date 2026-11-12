@@ -1,6 +1,7 @@
 """Row and comment CRUD on the nested chapters[].rows[] array, via MongoDB arrayFilters.
 Split out of core.db to keep episode-level CRUD and row-level CRUD independently readable.
 """
+import time
 import uuid
 
 from bson import ObjectId
@@ -10,6 +11,10 @@ from core.db import episodes_collection, _now
 COMMENT_TARGETS = ("english", "ai_translation", "reviewer_edit", "audio")
 ANCHORABLE_COMMENT_TARGETS = ("english", "ai_translation")
 TITLE_COMMENT_TARGETS = ("english", "ai_translation", "reviewer_edit")
+
+
+def _version() -> int:
+    return int(time.time() * 1000)
 
 
 def _row_filters(sr_no: int) -> list[dict]:
@@ -81,13 +86,14 @@ def set_row_audio(episode_id: str, sr_no: int, *, audio_path: str | None, audio_
                    audio_generated_from_text: str) -> None:
     """Set the TTS-lane audio fields together (initial pipeline pass and manual regenerate both use this)."""
     update_row(episode_id, sr_no, audio_path=audio_path, audio_status=audio_status,
-               audio_generated_from_text=audio_generated_from_text)
+               audio_generated_from_text=audio_generated_from_text, audio_version=_version())
 
 
 def set_reviewer_audio(episode_id: str, sr_no: int, *, audio_path: str, audio_status: str) -> None:
     """Set reviewer-uploaded audio and make it primary."""
     update_row(episode_id, sr_no, reviewer_audio_path=audio_path,
-               reviewer_audio_status=audio_status, audio_source="reviewer")
+               reviewer_audio_status=audio_status, audio_source="reviewer",
+               reviewer_audio_version=_version())
 
 
 def clear_reviewer_audio(episode_id: str, sr_no: int) -> None:
@@ -167,6 +173,7 @@ def set_chapter_title_translation(episode_id: str, chapter_number: int, translat
                    "chapters.$[c].title_comments": {t: [] for t in TITLE_COMMENT_TARGETS},
                    "chapters.$[c].title_audio_status": "done" if audio_path else "pending",
                    "chapters.$[c].title_audio_generated_from_text": translated_title if audio_path else None,
+                   "chapters.$[c].title_audio_version": _version(),
                    "updated_at": _now()}},
         array_filters=_chapter_filter(chapter_number),
     )
@@ -231,6 +238,7 @@ def set_chapter_title_audio(episode_id: str, chapter_number: int, *, audio_path:
         {"$set": {"chapters.$[c].title_audio_path": audio_path,
                    "chapters.$[c].title_audio_status": audio_status,
                    "chapters.$[c].title_audio_generated_from_text": audio_generated_from_text,
+                   "chapters.$[c].title_audio_version": _version(),
                    "updated_at": _now()}},
         array_filters=_chapter_filter(chapter_number),
     )
@@ -276,6 +284,7 @@ def set_episode_title_audio(episode_id: str, *, audio_path: str | None, audio_st
         {"_id": ObjectId(episode_id)},
         {"$set": {"title_audio_path": audio_path, "title_audio_status": audio_status,
                    "title_audio_generated_from_text": audio_generated_from_text,
+                   "title_audio_version": _version(),
                    "updated_at": _now()}},
     )
 

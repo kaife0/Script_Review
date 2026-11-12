@@ -22,6 +22,8 @@ RUN chmod +x scripts/download_voices.sh \
     && scripts/download_voices.sh spanish \
     && scripts/download_voices.sh french
 
+RUN python scripts/tts_smoke_test.py
+
 ENV PORT=8080
 EXPOSE 8080
 

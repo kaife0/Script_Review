@@ -1,6 +1,7 @@
 """Audiobook Translation Review Platform. Language-first navigation; MongoDB persistence;
 pipeline runs synchronously in the request; results rendered dynamically from the episode doc.
 """
+import hashlib
 import logging
 import os
 import subprocess
@@ -15,6 +16,8 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, abort, Response
+from flask_compress import Compress
+from bson import ObjectId
 from werkzeug.datastructures import ContentRange
 from werkzeug.utils import secure_filename
 
@@ -35,6 +38,8 @@ UPLOAD_PART_BYTES = 16 * 1024 * 1024
 STALE_UPLOAD_SECONDS = 3 * 60 * 60
 
 app = Flask(__name__)
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 31536000
+Compress(app)
 try:
     db.ensure_indexes()
 except Exception as exc:
@@ -61,6 +66,34 @@ def _title_comments(obj: dict, target: str) -> list:
 
 
 app.jinja_env.globals["title_comments"] = _title_comments
+
+
+def static_url(filename: str) -> str:
+    mtime = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
+    return url_for("static", filename=filename, v=mtime)
+
+
+def audio_url(episode_id: str, audio_path: str | None, version=None) -> str | None:
+    if not audio_path:
+        return None
+    if not version:
+        return url_for("episode_audio", episode_id=episode_id, filename=audio_path)
+    v = hashlib.md5(str(version).encode()).hexdigest()[:10]
+    return url_for("episode_audio", episode_id=episode_id, filename=audio_path, v=v)
+
+
+def row_audio_url(episode_id: str, row: dict) -> str | None:
+    return audio_url(episode_id, row.get("audio_path"),
+                     row.get("audio_version") or row.get("audio_generated_from_text"))
+
+
+def title_audio_url(episode_id: str, obj: dict) -> str | None:
+    return audio_url(episode_id, obj.get("title_audio_path"),
+                     obj.get("title_audio_version") or obj.get("title_audio_generated_from_text"))
+
+
+app.jinja_env.globals.update(static_url=static_url, audio_url=audio_url,
+                             row_audio_url=row_audio_url, title_audio_url=title_audio_url)
 
 
 _TITLE_COMMENT_ENDPOINTS = {
@@ -94,13 +127,15 @@ def lang_dashboard(lang_code):
     lang = get_language(lang_code)
     if lang is None:
         abort(404)
-    episodes = db.list_episodes_for_language(lang_code)
+    episodes = db.list_episode_summaries(lang_code)
     for ep in episodes:
-        ep["row_count"] = sum(len(c["rows"]) for c in ep["chapters"])
+        verified, total = db.count_verified(ep)
+        ep["row_count"] = total
         ep["chapter_count"] = len(ep["chapters"])
-        ep["review_percent"] = db.review_percent(ep["_id"]) if ep["status"] in (
-            db.STATUS_TTS_DONE, db.STATUS_REVIEWED) else 0
-        ep["final_audio_status"] = native_review.final_audio_status(ep)
+        ep["review_percent"] = round(verified / total * 100) if total else 0
+    shared = native_review.shared_tracks(ep.get("english_key") for ep in episodes)
+    for ep in episodes:
+        ep["final_audio_status"] = native_review.final_audio_status(ep, shared.get(ep.get("english_key")))
     return render_template("lang_dashboard.html", lang=lang, episodes=episodes)
 
 
@@ -145,7 +180,7 @@ def episode_view(episode_id):
     # in the background on open; the page then shows the usual "audio generating" polling UI.
     repairing = (episode["status"] in (db.STATUS_TTS_DONE, db.STATUS_REVIEWED)
                  and episode_missing_audio(episode) and start_audio_repair(episode_id))
-    verified, total = db.verification_counts(episode_id)
+    verified, total = db.count_verified(episode)
     return render_template("episode.html", episode=episode, standalone=False,
                             verified_rows=verified, total_rows=total,
                             audio_in_progress=repairing or episode["status"] == "tts")
@@ -223,10 +258,8 @@ def episode_audio_status(episode_id):
         "stalled": stalled,
         "rows": [
             {**r,
-             "audio_url": url_for("episode_audio", episode_id=episode_id, filename=r["audio_path"])
-                          if r.get("audio_path") else None,
-             "reviewer_audio_url": url_for("episode_audio", episode_id=episode_id, filename=r["reviewer_audio_path"])
-                                    if r.get("reviewer_audio_path") else None}
+             "audio_url": row_audio_url(episode_id, r),
+             "reviewer_audio_url": audio_url(episode_id, r.get("reviewer_audio_path"), r.get("reviewer_audio_version"))}
             for r in db.audio_statuses(episode_id)
         ],
     })
@@ -252,18 +285,42 @@ def episode_delete(episode_id):
     return redirect(url_for("lang_dashboard", lang_code=episode["target_lang"]))
 
 
+_audio_sizes: dict[tuple, int] = {}
+
+
+def _audio_size(episode_id: str, path: str, version: str | None) -> int:
+    key = (episode_id, path, version)
+    if version and key in _audio_sizes:
+        return _audio_sizes[key]
+    total = storage.size(episode_id, path)
+    if version:
+        if len(_audio_sizes) > 5000:
+            _audio_sizes.clear()
+        _audio_sizes[key] = total
+    return total
+
+
 @app.route("/episode/<episode_id>/audio/<path:filename>")
 def episode_audio(episode_id, filename):
+    return _serve_audio(episode_id, filename)
+
+
+@app.route("/english/<key>/audio/<path:filename>")
+def shared_english_audio(key, filename):
+    return _serve_audio(native_review.shared_namespace(secure_filename(key)), filename)
+
+
+def _serve_audio(namespace, filename):
     path = f"audio/{filename}"
     try:
-        total = storage.size(episode_id, path)
+        total = _audio_size(namespace, path, request.args.get("v"))
     except FileNotFoundError:
         abort(404)
     byte_range = request.range.range_for_length(total) if request.range else None
     start, stop = byte_range or (0, total)
     if byte_range:
         stop = min(stop, start + AUDIO_CHUNK_BYTES)
-    resp = Response(storage.read_range(episode_id, path, start, stop - 1),
+    resp = Response(storage.read_range(namespace, path, start, stop - 1),
                     206 if byte_range else 200, mimetype="audio/mpeg")
     resp.accept_ranges = "bytes"
     if byte_range:
@@ -359,9 +416,8 @@ def regenerate_row_audio(episode_id, sr_no):
         audio_path, audio_status = synthesize_row_audio(episode_id, episode["target_lang"], row, speakers)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
-    audio_url = url_for("episode_audio", episode_id=episode_id, filename=audio_path) if audio_path else None
     return jsonify({"ok": True, "audio_path": audio_path, "audio_status": audio_status,
-                     "audio_url": audio_url, "audio_stale": False})
+                     "audio_url": row_audio_url(episode_id, db.get_row(episode_id, sr_no)), "audio_stale": False})
 
 
 @app.route("/episode/<episode_id>/row/<int:sr_no>/ai-fill", methods=["POST"])
@@ -398,7 +454,7 @@ def upload_reviewer_audio(episode_id, sr_no):
     filename = f"row_{sr_no}_reviewer.mp3"
     storage.save_bytes(episode_id, f"audio/{filename}", mp3_bytes)
     db.set_reviewer_audio(episode_id, sr_no, audio_path=filename, audio_status="done")
-    return jsonify({"ok": True, "audio_url": url_for("episode_audio", episode_id=episode_id, filename=filename),
+    return jsonify({"ok": True, "audio_url": audio_url(episode_id, filename, db.get_row(episode_id, sr_no).get("reviewer_audio_version")),
                      "audio_source": "reviewer"})
 
 
@@ -533,9 +589,8 @@ def _regenerate_title_audio(episode_id, episode, text, save_audio):
     except Exception as exc:
         return {"ok": False, "error": str(exc)}, 500
     audio_path = save_audio(audio_bytes) if audio_bytes is not None else None
-    audio_url = url_for("episode_audio", episode_id=episode_id, filename=audio_path) if audio_path else None
     return {"ok": True, "audio_path": audio_path, "audio_status": "done",
-            "audio_url": audio_url, "audio_stale": False}, 200
+            "audio_url": audio_url(episode_id, audio_path, time.time_ns()), "audio_stale": False}, 200
 
 
 @app.route("/episode/<episode_id>/title/regenerate-audio", methods=["POST"])
@@ -698,22 +753,44 @@ def _episode_chapter(episode_id: str, chapter_number: int) -> tuple[dict, dict]:
     return episode, chapter
 
 
+def _track_url(episode_id, english_key, chapter, key, track):
+    v = int(track["uploaded_at"].timestamp())
+    if native_review.is_shared(chapter, key):
+        return url_for("shared_english_audio", key=english_key, filename=track["audio_path"], v=v)
+    return url_for("episode_audio", episode_id=episode_id, filename=track["audio_path"], v=v)
+
+
 @app.route("/episode/<episode_id>/native-review")
 def native_review_page(episode_id):
     episode = db.get_episode(episode_id) or abort(404)
+    english_key = native_review.english_key(episode)
+    shared = native_review.shared_tracks([english_key]).get(english_key)
     chapters = [{
         "number": c["chapter_number"],
         "title": c["title"],
         "verified": bool(c.get("final_audio_verified")),
-        "uploaded": native_review.chapter_uploaded(c),
+        "uploaded": native_review.chapter_uploaded(c, shared),
+        "shared_en": native_review.is_shared(c, "en"),
         "lines": {r["sr_no"]: {"speaker": r["speaker"], "en": r["english"], "native": r["reviewer_text"]} for r in c["rows"]},
         "tracks": {key: {"cues": t["cues"], "comments": [_serialize_comment(cm) for cm in t["comments"]],
-                         "url": url_for("episode_audio", episode_id=episode_id, filename=t["audio_path"],
-                                        v=int(t["uploaded_at"].timestamp()))}
-                   for key, t in c.get("native_review", {}).items()},
+                         "url": _track_url(episode_id, english_key, c, key, t)}
+                   for key, t in native_review.chapter_tracks(c, shared).items()},
     } for c in episode["chapters"]]
-    return render_template("native_review.html", episode=episode, chapters=chapters,
-                           final_status=native_review.final_audio_status(episode))
+    linked = native_review.linked_episodes(english_key, episode_id) if english_key else []
+    others = [e for e in db.list_link_candidates(episode["target_lang"]) if e.get("english_key") != english_key]
+    return render_template("native_review.html", episode=episode, chapters=chapters, linked=linked, others=others,
+                           final_status=native_review.final_audio_status(episode, shared))
+
+
+@app.route("/episode/<episode_id>/english-link", methods=["POST"])
+def link_english_audio(episode_id):
+    episode = db.get_episode(episode_id) or abort(404)
+    other_id = request.form.get("episode", "")
+    other = db.get_episode(other_id) if ObjectId.is_valid(other_id) else None
+    if other is None:
+        abort(400)
+    native_review.set_english_key(episode_id, native_review.english_key(other))
+    return redirect(url_for("native_review_page", episode_id=episode["_id"]))
 
 
 NATIVE_REVIEW_TRACK = "/episode/<episode_id>/chapter/<int:chapter_number>/native-review/<any(en, native):track>"
@@ -745,7 +822,7 @@ def upload_native_review_part(episode_id, chapter_number, track, upload_id, inde
 
 @app.route(f"{NATIVE_REVIEW_TRACK}/parts/<uuid:upload_id>/finish", methods=["POST"])
 def finish_native_review_upload(episode_id, chapter_number, track, upload_id):
-    _, chapter = _episode_chapter(episode_id, chapter_number)
+    episode, chapter = _episode_chapter(episode_id, chapter_number)
     raw = _take_upload_parts(episode_id, upload_id)
     if not raw:
         abort(400)
@@ -759,8 +836,10 @@ def finish_native_review_upload(episode_id, chapter_number, track, upload_id):
         app.logger.exception("caption sync failed")
         return jsonify({"error": f"Caption sync failed: {exc}"}), 502
     filename = f"final_ch{chapter_number}_{track}.mp3"
-    storage.save_bytes(episode_id, f"audio/{filename}", mp3)
-    native_review.set_track(episode_id, chapter_number, track, filename, cues)
+    namespace = (native_review.shared_namespace(native_review.english_key(episode))
+                 if native_review.is_shared(chapter, track) else episode_id)
+    storage.save_bytes(namespace, f"audio/{filename}", mp3)
+    native_review.set_track(episode, chapter_number, track, filename, cues)
     return jsonify({"ok": True})
 
 
@@ -770,25 +849,30 @@ def add_native_review_comment(episode_id, chapter_number, track):
     time_ = request.form.get("time", type=float)
     if not text or time_ is None:
         abort(400)
-    comment = native_review.add_comment(episode_id, chapter_number, track, time_,
+    episode, _ = _episode_chapter(episode_id, chapter_number)
+    comment = native_review.add_comment(episode, chapter_number, track, time_,
                                         request.form.get("sr_no", type=int), text)
     return jsonify(_serialize_comment(comment))
 
 
 @app.route(f"{NATIVE_REVIEW_TRACK}/comments/<comment_id>/delete", methods=["POST"])
 def delete_native_review_comment(episode_id, chapter_number, track, comment_id):
-    native_review.delete_comment(episode_id, chapter_number, track, comment_id)
+    episode, _ = _episode_chapter(episode_id, chapter_number)
+    native_review.delete_comment(episode, chapter_number, track, comment_id)
     return jsonify({"ok": True})
 
 
 @app.route("/episode/<episode_id>/chapter/<int:chapter_number>/native-review/verify", methods=["POST"])
 def verify_native_review_chapter(episode_id, chapter_number):
-    _, chapter = _episode_chapter(episode_id, chapter_number)
+    episode, chapter = _episode_chapter(episode_id, chapter_number)
+    key = native_review.english_key(episode)
+    shared = native_review.shared_tracks([key]).get(key)
     verified = request.form.get("verified") == "true"
-    if verified and not native_review.chapter_uploaded(chapter):
+    if verified and not native_review.chapter_uploaded(chapter, shared):
         abort(400)
     native_review.set_verified(episode_id, chapter_number, verified)
-    return jsonify({"verified": verified, "status": native_review.final_audio_status(db.get_episode(episode_id))})
+    return jsonify({"verified": verified,
+                    "status": native_review.final_audio_status(db.get_episode(episode_id), shared)})
 
 
 # Started at import so it also runs under gunicorn (single worker, see Dockerfile). Under the

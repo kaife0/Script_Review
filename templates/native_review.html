@@ -44,12 +44,47 @@
   .nr-comments li span { flex: 1; white-space: pre-wrap; }
   .nr-link { border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-size: 0.78rem; cursor: pointer; white-space: nowrap; }
   .nr-empty { color: var(--text-muted); font-style: italic; }
+  .nr-share { padding: 0.8rem 1.1rem; margin-bottom: 1.5rem; font-size: 0.88rem; }
+  .nr-share form { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.6rem; }
+  .nr-share select { flex: 1; min-width: 0; padding: 0.4rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; }
+  .nr-share summary { cursor: pointer; color: var(--primary); margin-top: 0.4rem; }
+  @media (max-width: 640px) {
+    .page { padding: 1.25rem 1rem 3rem; }
+    h1 { font-size: 1.3rem; }
+    .nr-chapter { padding: 1rem; }
+    .nr-uploads, .nr-columns { grid-template-columns: 1fr; }
+    .nr-toolbar .nr-seg { flex: 1; }
+    .nr-seg button { flex: 1; padding: 0.55rem 0.5rem; }
+    .nr-list { max-height: 300px; }
+    .nr-main { font-size: 1.05rem; }
+  }
 </style>
 {% endblock %}
 {% block body %}
 <a class="back-link" href="{{ url_for('episode_view', episode_id=episode._id) }}">&larr; Script review</a>
 <h1>{{ episode.title }} — Final Audio Review {{ macros.final_audio_badge(final_status) }}</h1>
 <p class="meta">Upload the final edited audio for each chapter, listen with captions, leave time-stamped comments, then mark each chapter verified.</p>
+<div class="panel nr-share">
+  {% if linked %}
+  <strong>English audio is shared with:</strong>
+  {% for e in linked %}<a href="{{ url_for('native_review_page', episode_id=e._id) }}">{{ e.target_lang_name }} · {{ e.title }}</a>{{ ", " if not loop.last }}{% endfor %}.
+  Upload it once here or on any of those pages.
+  {% else %}
+  English audio isn't linked to another language yet. It links automatically when the English script matches.
+  {% endif %}
+  {% if others %}
+  <details>
+    <summary>Link English audio to a different episode</summary>
+    <form method="post" action="{{ url_for('link_english_audio', episode_id=episode._id) }}" data-pending-text="Linking…">
+      <select name="episode" required>
+        <option value="">Choose an episode…</option>
+        {% for e in others %}<option value="{{ e._id }}">{{ e.target_lang_name }} · {{ e.title }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-sm" type="submit">Link</button>
+    </form>
+  </details>
+  {% endif %}
+</div>
 
 {% for ch in chapters %}
 <section class="panel nr-chapter{{ ' verified' if ch.verified }}" id="chapter-{{ ch.number }}">
@@ -62,8 +97,11 @@
   </div>
   <div class="nr-uploads">
     {% for key, label in tracks %}
-    <form data-upload="{{ key }}" data-label="{{ label }}" {% if ch.tracks[key] %}data-replace{% endif %}>
-      <label>{{ label }} audio {% if ch.tracks[key] %}<span class="badge badge-ok">uploaded</span>{% endif %}</label>
+    {% set shared = key == "en" and ch.shared_en %}
+    <form data-upload="{{ key }}" data-label="{{ label }}" {% if ch.tracks[key] %}data-replace{% endif %}
+          data-affects="{{ linked | length + 1 if shared else 1 }}">
+      <label>{{ label }} audio {% if ch.tracks[key] %}<span class="badge badge-ok">uploaded</span>{% endif %}
+        {% if shared and linked %}<span class="badge badge-info">shared</span>{% endif %}</label>
       <input type="file" name="audio" accept="audio/*" required>
       <button class="btn btn-sm" type="submit">{{ "Replace" if ch.tracks[key] else "Upload" }}</button>
       <span class="nr-upload-status"></span>
@@ -98,5 +136,5 @@
 {% endfor %}
 
 <script id="nr-data" type="application/json">{{ {"episodeId": episode._id, "chapters": chapters}|tojson }}</script>
-<script src="{{ url_for('static', filename='js/native_review.js') }}"></script>
+<script src="{{ static_url('js/native_review.js') }}"></script>
 {% endblock %}

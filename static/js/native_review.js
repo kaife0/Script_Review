@@ -39,7 +39,9 @@
         e.preventDefault();
         const file = form.querySelector("input[type=file]").files[0];
         if (!file) return;
-        if ("replace" in form.dataset && !confirm(`Replace the ${form.dataset.label} audio? Its comments and the chapter's verified mark will be cleared.`)) return;
+        const affects = Number(form.dataset.affects || 1);
+        const scope = affects > 1 ? ` This is shared, so it changes for ${affects} episodes.` : "";
+        if ("replace" in form.dataset && !confirm(`Replace the ${form.dataset.label} audio?${scope} Its comments and the chapter's verified mark will be cleared.`)) return;
         const url = `${baseUrl}/${form.dataset.upload}/parts/${crypto.randomUUID()}`;
         const parts = Math.ceil(file.size / PART_BYTES);
         form.querySelectorAll("input, button").forEach(x => x.disabled = true);

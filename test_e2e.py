@@ -62,8 +62,19 @@ class EndToEndTest(unittest.TestCase):
         cls.client = app_module.app.test_client()
         cls.episode_ids = []
 
+    def setUp(self):
+        self._clear_shared_english()
+
+    @staticmethod
+    def _clear_shared_english():
+        from core import native_review
+        for doc in native_review.english_collection().find({}, {"_id": 1}):
+            app_module.storage.delete_episode_files(native_review.shared_namespace(doc["_id"]))
+        native_review.english_collection().delete_many({})
+
     @classmethod
     def tearDownClass(cls):
+        cls._clear_shared_english()
         for episode_id in cls.episode_ids:
             db.episodes_collection().delete_one({"_id": ObjectId(episode_id)})
             app_module.storage.delete_episode_files(episode_id)
@@ -474,8 +485,9 @@ class EndToEndTest(unittest.TestCase):
         episode_id = self._make_parsed_episode()
         cues = [{"sr_no": 1, "start": 0.0, "end": 0.4}, {"sr_no": 2, "start": 0.5, "end": 0.9}]
         self._upload_final_audio(episode_id, "native", cues)
-        comment = native_review.add_comment(episode_id, 1, "native", 0.7, 1, "late line")
-        native_review.resync_track(episode_id, 1, "native", cues, [comment])
+        episode = db.get_episode(episode_id)
+        comment = native_review.add_comment(episode, 1, "native", 0.7, 1, "late line")
+        native_review.resync_track(episode, 1, "native", cues, [comment])
         track = db.get_episode(episode_id)["chapters"][0]["native_review"]["native"]
         self.assertEqual(track["comments"][0]["sr_no"], 2)
 
@@ -549,6 +561,49 @@ class EndToEndTest(unittest.TestCase):
         chapter = db.get_episode(episode_id)["chapters"][0]
         self.assertEqual(chapter["native_review"]["native"]["comments"], [])
         self.assertFalse(chapter["final_audio_verified"])
+
+    def test_english_audio_shared_across_languages(self):
+        cues = [{"sr_no": 1, "start": 0.0, "end": 0.4}, {"sr_no": 2, "start": 0.5, "end": 0.9}]
+        it_id = self._make_parsed_episode()
+        fr_id = self._make_parsed_episode("fr", "French")
+
+        self.assertEqual(self._upload_final_audio(it_id, "en", cues)[0].status_code, 200)
+        self.assertNotIn("en", db.get_episode(it_id)["chapters"][0].get("native_review", {}))
+        page = self.client.get(f"/episode/{fr_id}/native-review").data
+        self.assertIn(b"/english/", page)
+        self.assertIn(b"English audio is shared with", page)
+
+        fr_base = f"/episode/{fr_id}/chapter/1/native-review"
+        comment = self.client.post(f"{fr_base}/en/comments", data={"time": "0.2", "text": "Shared note"}).get_json()
+        self.assertIn(b"Shared note", self.client.get(f"/episode/{it_id}/native-review").data)
+        self.client.post(f"{fr_base}/en/comments/{comment['id']}/delete")
+        self.assertNotIn(b"Shared note", self.client.get(f"/episode/{it_id}/native-review").data)
+
+        self._upload_final_audio(fr_id, "native", cues)
+        resp = self.client.post(f"{fr_base}/verify", data={"verified": "true"})
+        self.assertEqual(resp.get_json()["status"], "verified")
+        self._upload_final_audio(it_id, "en", cues)
+        self.assertFalse(db.get_episode(fr_id)["chapters"][0]["final_audio_verified"])
+
+    def test_existing_english_upload_stays_on_its_episode(self):
+        cues = [{"sr_no": 1, "start": 0.0, "end": 0.4}]
+        old_id = self._make_parsed_episode("de", "German")
+        self._upload_final_audio(old_id, "native", cues)
+        db.episodes_collection().update_one(
+            {"_id": ObjectId(old_id)},
+            {"$set": {"chapters.0.native_review.en": {**db.get_episode(old_id)["chapters"][0]["native_review"]["native"]}}})
+        self.assertEqual(self._upload_final_audio(old_id, "en", cues)[0].status_code, 200)
+        self.assertIn("en", db.get_episode(old_id)["chapters"][0]["native_review"])
+        self.assertIsNone(app_module.native_review.english_collection().find_one())
+        self.assertNotIn(b"/english/", self.client.get(f"/episode/{old_id}/native-review").data)
+
+    def test_manual_english_link(self):
+        a = self._make_parsed_episode()
+        b = self._make_parsed_episode("es", "Spanish")
+        db.episodes_collection().update_one({"_id": ObjectId(b)}, {"$set": {"english_key": "different"}})
+        self.client.get(f"/episode/{a}/native-review")
+        self.client.post(f"/episode/{b}/english-link", data={"episode": a})
+        self.assertEqual(db.get_episode(a)["english_key"], db.get_episode(b)["english_key"])
 
     def test_native_review_upload_failure_shows_error(self):
         episode_id = self._make_parsed_episode()

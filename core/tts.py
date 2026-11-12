@@ -61,6 +61,7 @@ def _apply_pitch_tempo(wav_path: str, out_path: str, pitch_semitones: float, tem
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?…])\s+")
 _MAX_CHUNK_CHARS = 200
+_SPEAKABLE = re.compile(r"\w")
 
 
 def _split_for_synthesis(text: str) -> list[str]:
@@ -116,10 +117,16 @@ class SherpaOnnxBackend(TTSBackend):
         sample_rate = None
         pieces = []
         for chunk in _split_for_synthesis(text):
+            if not _SPEAKABLE.search(chunk):
+                continue
             audio = engine.generate(text=chunk, sid=0, speed=1.0)
+            if audio.sample_rate <= 0 or len(audio.samples) == 0:
+                continue
             sample_rate = audio.sample_rate
             pieces.append(np.asarray(audio.samples, dtype="float32"))
             pieces.append(np.zeros(int(sample_rate * 0.15), dtype="float32"))  # short pause between sentences
+        if not pieces:
+            raise RuntimeError(f"TTS produced no audio for voice '{voice['id']}' ({lang})")
         samples = np.concatenate(pieces[:-1])
 
         with tempfile.TemporaryDirectory() as tmp_dir:
