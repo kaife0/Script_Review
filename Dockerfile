@@ -24,6 +24,10 @@ RUN chmod +x scripts/download_voices.sh \
 
 RUN python scripts/tts_smoke_test.py
 
+RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/jobs && chown appuser:appuser /app/jobs
+USER appuser
+
 ENV PORT=8080
 EXPOSE 8080
 

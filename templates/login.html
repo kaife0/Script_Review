@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Audiobook Translation Review{% endblock %}
+{% block head %}
+<style>
+  .login-card { max-width: 380px; margin: 4rem auto 0; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 2rem; box-shadow: var(--shadow); }
+  .login-card h1 { font-size: 1.4rem; margin-bottom: 1.2rem; }
+  .login-card label { display: block; font-size: 0.88rem; font-weight: 600; margin: 0.9rem 0 0.3rem; }
+  .login-card input[type=text], .login-card input[type=password] { width: 100%; padding: 0.55rem 0.7rem;
+    border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; }
+  .login-card button { margin-top: 1.4rem; width: 100%; }
+  .login-error { background: var(--fail-bg); color: var(--fail-text); border-radius: 8px;
+    padding: 0.6rem 0.8rem; font-size: 0.9rem; }
+</style>
+{% endblock %}
+{% block body %}
+<div class="login-card">
+  <h1>Sign in</h1>
+  {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
+  <form method="post" action="{{ url_for('login') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label for="username">Username</label>
+    <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button class="btn" type="submit">Sign in</button>
+  </form>
+</div>
+{% endblock %}

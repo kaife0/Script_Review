@@ -2,7 +2,12 @@ venv/
 __pycache__/
 *.pyc
 .env
+.env.*
+!.env.example
 jobs/
 voices/
+tools/
 .git/
 scratch_*
+test_e2e.py
+*.docx

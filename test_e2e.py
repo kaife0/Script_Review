@@ -25,9 +25,13 @@ import time
 from docx import Document
 
 import app as app_module
-from core import db
+from core import auth, db
 from core.jobs import is_running
 from config.languages import has_tts_backend
+
+
+TEST_USER = "e2e-test-user"
+TEST_PASSWORD = "e2e-test-password-123"
 
 
 def _build_silent_wav(duration_seconds: float = 1.0, sample_rate: int = 8000) -> bytes:
@@ -61,6 +65,16 @@ class EndToEndTest(unittest.TestCase):
         app_module.app.config["TESTING"] = True
         cls.client = app_module.app.test_client()
         cls.episode_ids = []
+        auth.users().delete_many({"username": TEST_USER})
+        auth.create_user(TEST_USER, TEST_PASSWORD)
+        cls.client.get("/login")
+        with cls.client.session_transaction() as sess:
+            token = sess["csrf_token"]
+        resp = cls.client.post("/login", data={"username": TEST_USER, "password": TEST_PASSWORD,
+                                               "csrf_token": token})
+        assert resp.status_code == 302, resp.status_code
+        with cls.client.session_transaction() as sess:
+            cls.client.environ_base["HTTP_X_CSRF_TOKEN"] = sess["csrf_token"]
 
     def setUp(self):
         self._clear_shared_english()
@@ -75,6 +89,7 @@ class EndToEndTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls._clear_shared_english()
+        auth.users().delete_many({"username": TEST_USER})
         for episode_id in cls.episode_ids:
             db.episodes_collection().delete_one({"_id": ObjectId(episode_id)})
             app_module.storage.delete_episode_files(episode_id)
@@ -83,6 +98,32 @@ class EndToEndTest(unittest.TestCase):
     def _track(self, episode_id):
         self.episode_ids.append(episode_id)
         return episode_id
+
+    def test_requires_login(self):
+        anon = app_module.app.test_client()
+        resp = anon.get("/", headers={"Accept": "text/html"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/login", resp.headers["Location"])
+        self.assertEqual(anon.get("/lang/it").status_code, 401)
+
+    def test_login_rejects_bad_password(self):
+        anon = app_module.app.test_client()
+        anon.get("/login")
+        with anon.session_transaction() as sess:
+            token = sess["csrf_token"]
+        resp = anon.post("/login", data={"username": TEST_USER, "password": "wrong-password!",
+                                         "csrf_token": token})
+        self.assertEqual(resp.status_code, 401)
+        auth._failures.clear()
+
+    def test_post_without_csrf_token_rejected(self):
+        resp = self.client.post("/lang/it/new", data={}, environ_overrides={"HTTP_X_CSRF_TOKEN": ""})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_audio_path_traversal_blocked(self):
+        episode_id = str(ObjectId())
+        self.assertEqual(self.client.get(f"/episode/{episode_id}/audio/../../app.py").status_code, 404)
+        self.assertEqual(self.client.get("/episode/../audio/app.py").status_code, 404)
 
     def test_landing_page_loads(self):
         resp = self.client.get("/")

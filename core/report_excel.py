@@ -55,6 +55,8 @@ def build_excel_report(parsed: dict, reviews: list[dict], audio_paths: dict[int,
         for col_idx in range(1, len(HEADERS) + 1):
             cell = ws.cell(row=excel_row_idx, column=col_idx)
             cell.alignment = Alignment(vertical="top", wrap_text=True)
+            if isinstance(cell.value, str):
+                cell.data_type = "s"
             if fill:
                 cell.fill = fill
 

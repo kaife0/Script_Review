@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<script src="{{ static_url('js/csrf.js') }}"></script>
 <title>{% block title %}Audiobook Translation Review{% endblock %}</title>
 <style>
   :root {
@@ -102,10 +104,21 @@
     border-top-color: #fff; animation: btn-spin 0.7s linear infinite; display: inline-block; }
   .btn-secondary .btn-spinner { border-color: var(--border); border-top-color: var(--text-muted); }
   @keyframes btn-spin { to { transform: rotate(360deg); } }
+  .userbar { display: flex; justify-content: flex-end; align-items: center; gap: 0.6rem; padding: 0.5rem 1.2rem;
+    font-size: 0.82rem; color: var(--text-muted); }
+  .userbar form { margin: 0; }
+  .userbar-logout { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 0.2rem 0.6rem;
+    font-size: 0.8rem; color: var(--text-muted); cursor: pointer; }
+  .userbar-logout:hover { color: var(--primary); border-color: var(--primary); }
 </style>
 {% block head %}{% endblock %}
 </head>
 <body>
+{% if g.user %}
+<div class="userbar">Signed in as <strong>{{ g.user }}</strong>
+  <form method="post" action="{{ url_for('logout') }}"><button type="submit" class="userbar-logout">Sign out</button></form>
+</div>
+{% endif %}
 <div class="page">
 {% block body %}{% endblock %}
 </div>

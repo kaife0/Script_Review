@@ -9,6 +9,8 @@ import tempfile
 import threading
 from collections import OrderedDict
 
+from werkzeug.utils import secure_filename
+
 from core.voice_registry import resolve_voice_model
 
 # Each loaded voice engine costs 100-400MB (the "-high" models are the largest). Caching all of a
@@ -23,13 +25,15 @@ def transcode_to_mp3(raw_bytes: bytes, filename_hint: str = "upload", bitrate: s
     """Transcode arbitrary browser-recorded/uploaded audio (webm/ogg/wav/mp3/m4a) to mp3 via
     ffmpeg, for consistent playback and standalone HTML export. Raises
     subprocess.CalledProcessError on unreadable/corrupt input."""
+    if raw_bytes.lstrip()[:16].lower().startswith((b"#extm3u", b"ffconcat", b"[playlist]", b"<?xml")):
+        raise subprocess.CalledProcessError(1, "ffmpeg", stderr=b"playlist input rejected")
     with tempfile.TemporaryDirectory() as tmp_dir:
-        src_path = os.path.join(tmp_dir, filename_hint)
+        src_path = os.path.join(tmp_dir, "in" + os.path.splitext(secure_filename(filename_hint))[1][:8])
         out_path = os.path.join(tmp_dir, "out.mp3")
         with open(src_path, "wb") as f:
             f.write(raw_bytes)
         subprocess.run(
-            ["ffmpeg", "-y", "-i", src_path, "-codec:a", "libmp3lame",
+            ["ffmpeg", "-y", "-protocol_whitelist", "file", "-i", src_path, "-codec:a", "libmp3lame",
              *(["-b:a", bitrate] if bitrate else ["-qscale:a", "4"]), out_path],
             check=True, capture_output=True,
         )

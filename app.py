@@ -15,13 +15,14 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, abort, Response
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, abort, Response, g
 from flask_compress import Compress
 from bson import ObjectId
 from werkzeug.datastructures import ContentRange
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
-from core import db, storage, native_review
+from core import auth, db, storage, native_review
 from core.alignment import align_lines
 from core.exports import build_docx_export, build_xlsx_export
 from core.jobs import start_pipeline, start_audio_repair
@@ -39,6 +40,9 @@ STALE_UPLOAD_SECONDS = 3 * 60 * 60
 
 app = Flask(__name__)
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 31536000
+app.config["MAX_CONTENT_LENGTH"] = UPLOAD_PART_BYTES + 1024 * 1024
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+auth.init_app(app)
 Compress(app)
 try:
     db.ensure_indexes()
@@ -106,6 +110,8 @@ _TITLE_COMMENT_ENDPOINTS = {
 
 @app.url_value_preprocessor
 def _validate_comment_target(endpoint, values):
+    if values and "episode_id" in values and not ObjectId.is_valid(str(values["episode_id"])):
+        abort(404)
     if values and "target" in values:
         allowed = db.TITLE_COMMENT_TARGETS if endpoint in _TITLE_COMMENT_ENDPOINTS else db.COMMENT_TARGETS
         if values["target"] not in allowed:
@@ -490,7 +496,7 @@ def add_comment(episode_id, sr_no, target):
     text = request.form.get("text", "").strip()
     if not text:
         abort(400, "Comment text is required.")
-    author = request.form.get("author", "Reviewer").strip() or "Reviewer"
+    author = g.user
     comment = db.add_comment(episode_id, sr_no, target, text, author, anchor=_parse_anchor(request.form))
     return jsonify({"ok": True, "comment": _serialize_comment(comment)})
 
@@ -500,7 +506,7 @@ def reply_comment(episode_id, sr_no, target, comment_id):
     text = request.form.get("text", "").strip()
     if not text:
         abort(400, "Reply text is required.")
-    author = request.form.get("author", "Reviewer").strip() or "Reviewer"
+    author = g.user
     reply = db.add_comment_reply(episode_id, sr_no, target, comment_id, text, author)
     return jsonify({"ok": True, "reply": _serialize_comment(reply)})
 
@@ -637,7 +643,7 @@ def add_episode_title_comment(episode_id, target):
     text = request.form.get("text", "").strip()
     if not text:
         abort(400, "Comment text is required.")
-    author = request.form.get("author", "Reviewer").strip() or "Reviewer"
+    author = g.user
     comment = db.add_title_comment(episode_id, "episode", target, text, author, anchor=_parse_anchor(request.form))
     return jsonify({"ok": True, "comment": _serialize_comment(comment)})
 
@@ -647,7 +653,7 @@ def reply_episode_title_comment(episode_id, target, comment_id):
     text = request.form.get("text", "").strip()
     if not text:
         abort(400, "Reply text is required.")
-    author = request.form.get("author", "Reviewer").strip() or "Reviewer"
+    author = g.user
     reply = db.add_title_comment_reply(episode_id, "episode", target, comment_id, text, author)
     return jsonify({"ok": True, "reply": _serialize_comment(reply)})
 
@@ -676,7 +682,7 @@ def add_chapter_title_comment(episode_id, chapter_number, target):
     text = request.form.get("text", "").strip()
     if not text:
         abort(400, "Comment text is required.")
-    author = request.form.get("author", "Reviewer").strip() or "Reviewer"
+    author = g.user
     locator = f"chapter:{chapter_number}"
     comment = db.add_title_comment(episode_id, locator, target, text, author, anchor=_parse_anchor(request.form))
     return jsonify({"ok": True, "comment": _serialize_comment(comment)})
@@ -687,7 +693,7 @@ def reply_chapter_title_comment(episode_id, chapter_number, target, comment_id):
     text = request.form.get("text", "").strip()
     if not text:
         abort(400, "Reply text is required.")
-    author = request.form.get("author", "Reviewer").strip() or "Reviewer"
+    author = g.user
     reply = db.add_title_comment_reply(episode_id, f"chapter:{chapter_number}", target, comment_id, text, author)
     return jsonify({"ok": True, "reply": _serialize_comment(reply)})
 
@@ -883,4 +889,4 @@ if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=os.environ.get("FLASK_DEBUG") == "1", host="127.0.0.1")
